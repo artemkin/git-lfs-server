@@ -1,0 +1,4 @@
+true: package(core async cohttp.async)
+true: thread,debug,annot
+true: bin_annot
+
