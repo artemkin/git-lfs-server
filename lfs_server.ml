@@ -17,19 +17,35 @@
 
 open Core.Std
 open Async.Std
+open Cohttp
 open Cohttp_async
 
+module Json = struct
+  let error message =
+    let msg = `Assoc [ "message", `String message ] in
+    Yojson.Basic.pretty_to_string msg
+end
+
+let is_sha256_hex_digest str =
+  if String.length str <> 64 then false
+  else String.for_all str ~f:Char.is_alphanum
+
+
+let respond_with_string ?(headers=Header.init ()) =
+  let headers = Header.add headers "Content-Type" "application/vnd.git-lfs+json" in
+  Server.respond_with_string ~headers
+
+
 let handler ~body:_ _sock req =
-  let uri = Cohttp.Request.uri req in
-  eprintf "%s\n" (Uri.path uri);
-  match Uri.path uri with
-  | "/test" ->
-    Uri.get_query_param uri "hello"
-    |> Option.map ~f:(fun v -> "hello: " ^ v)
-    |> Option.value ~default:"No param hello supplied"
-    |> Server.respond_with_string
+  (* let uri = Request.uri req in *)
+  (*  let path = Uri.path uri in *)
+  match Request.meth req with
+  | `GET -> Server.respond_with_string "GET!!!!\n"
+  | `HEAD -> Server.respond_with_string "HEAD!!!\n"
+  | `POST -> Server.respond_with_string "POST!!!\n"
   | _ ->
-    Server.respond_with_string ~code:`Not_found "Route not found"
+    respond_with_string
+      ~code:`Not_implemented @@ Json.error "Not implemented"
 
 let start_server host port () =
   eprintf "Listening for HTTP on port %d\n" port;
@@ -46,7 +62,7 @@ let start_server host port () =
 
 let () =
   Command.async_basic
-    ~summary:"Start a hello world Async server"
+    ~summary:"Start a Git LFS server"
     Command.Spec.(
       empty
       +> flag "-s" (optional_with_default "127.0.0.1" string) ~doc:"address IP address to listen on"

@@ -1,4 +1,4 @@
-PKG core async
+PKG core async cohttp.async yojson
 S .
 B _build
 
