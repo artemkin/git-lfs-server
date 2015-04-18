@@ -21,35 +21,78 @@ open Cohttp
 open Cohttp_async
 
 module Json = struct
-  let error message =
-    let msg = `Assoc [ "message", `String message ] in
-    Yojson.Basic.pretty_to_string msg
+  let error msg =
+    let msg = `Assoc [ "message", `String msg ] in
+    Yojson.pretty_to_string msg
+
+  let metadata ~oid ~size ~self_url ~download_url =
+    let msg = `Assoc [
+        "oid", `String oid;
+        "size", `Intlit (Int64.to_string size);
+        "_links", `Assoc [
+          "self", `Assoc [ "href", `String self_url ];
+          "download", `Assoc [ "href", `String download_url ]
+        ]
+      ] in
+    Yojson.pretty_to_string msg
 end
 
 let is_sha256_hex_digest str =
   if String.length str <> 64 then false
   else String.for_all str ~f:Char.is_alphanum
 
-
 let respond_with_string ?(headers=Header.init ()) =
   let headers = Header.add headers "Content-Type" "application/vnd.git-lfs+json" in
   Server.respond_with_string ~headers
 
+let respond_not_found ~msg =
+  respond_with_string
+    ~code:`Not_found @@ Json.error msg
 
-let handler ~body:_ _sock req =
-  (* let uri = Request.uri req in *)
-  (*  let path = Uri.path uri in *)
-  match Request.meth req with
-  | `GET -> Server.respond_with_string "GET!!!!\n"
-  | `HEAD -> Server.respond_with_string "HEAD!!!\n"
-  | `POST -> Server.respond_with_string "POST!!!\n"
-  | _ ->
-    respond_with_string
-      ~code:`Not_implemented @@ Json.error "Not implemented"
+let respond_not_implemented () =
+  respond_with_string
+    ~code:`Not_implemented @@ Json.error "Not implemented"
 
-let start_server host port () =
+let get_oid_path ~oid =
+  let oid02 = String.prefix oid 2 in
+  let oid24 = String.sub oid ~pos:2 ~len:2 in
+  Filename.of_parts [oid02; oid24; oid]
+
+let get_object_path ~root ~oid =
+  Filename.of_parts [root; "/objects"; get_oid_path ~oid]
+
+let respond_object_metadata ~root ~meth ~oid  =
+  let file = get_object_path ~root ~oid in
+  try_with (fun () -> Unix.stat file) >>= function
+  | Error _ -> respond_not_found ~msg:"Object not found"
+  | Ok stat ->
+    respond_with_string ~code:`OK
+    @@ Json.metadata ~oid ~size:(Unix.Stats.size stat) ~self_url:"self_url" ~download_url:"download_url"
+
+let oid_from_path path =
+  match String.rsplit2 path ~on:'/' with
+  | Some ("/objects", oid) ->
+    if is_sha256_hex_digest oid then Some (oid, `Metadata) else None
+  | Some ("/data/objects", oid) ->
+    if is_sha256_hex_digest oid then Some (oid, `Object) else None
+  | _ -> None
+
+let serve_client ~root ~body:_ _sock req =
+  let uri = Request.uri req in
+  let path = Uri.path uri in
+  let meth = Request.meth req in
+  let oid = oid_from_path path in
+  match meth, oid with
+  | `GET, Some (oid, `Metadata) | `HEAD, Some (oid, `Metadata) ->
+    respond_object_metadata ~root ~meth ~oid
+  | `GET, Some (oid, `Object) | `HEAD, Some (oid, `Object) ->
+    respond_not_implemented ()
+  | `GET, None | `HEAD, None -> respond_not_found ~msg:"Wrong path"
+  | `POST, _ -> respond_not_implemented ()
+  | _ -> respond_not_implemented ()
+
+let start_server ~root ~host ~port () =
   eprintf "Listening for HTTP on port %d\n" port;
-  eprintf "Try 'curl http://localhost:%d/test?hello=xyz'\n%!" port;
   Unix.Inet_addr.of_string_or_getbyname host
   >>= fun host ->
   let listen_on = Tcp.Where_to_listen.create
@@ -57,7 +100,10 @@ let start_server host port () =
       ~address:(`Inet (host, port))
       ~listening_on:(fun _ -> port)
   in
-  Server.create ~on_handler_error:`Raise listen_on handler
+  Server.create
+    ~on_handler_error:`Raise
+    listen_on
+    (serve_client ~root)
   >>= fun _ -> Deferred.never ()
 
 let () =
@@ -65,8 +111,10 @@ let () =
     ~summary:"Start a Git LFS server"
     Command.Spec.(
       empty
+      +> anon (maybe_with_default "./.lfs" ("root" %: string))
       +> flag "-s" (optional_with_default "127.0.0.1" string) ~doc:"address IP address to listen on"
       +> flag "-p" (optional_with_default 8080 int) ~doc:"port TCP port to listen on"
-    ) start_server
+    )
+    (fun root host port -> start_server ~root ~host ~port)
   |> Command.run
 
