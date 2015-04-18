@@ -61,13 +61,19 @@ let get_oid_path ~oid =
 let get_object_path ~root ~oid =
   Filename.of_parts [root; "/objects"; get_oid_path ~oid]
 
-let respond_object_metadata ~root ~meth ~oid  =
+(* TODO fix this *)
+let fix_uri ~port uri =
+  let uri = Uri.with_scheme uri (Some "http") in
+  Uri.with_port uri (if port = 80 then None else Some port)
+
+let respond_object_metadata ~root ~port ~uri ~meth ~oid  =
   let file = get_object_path ~root ~oid in
   try_with (fun () -> Unix.stat file) >>= function
   | Error _ -> respond_not_found ~msg:"Object not found"
   | Ok stat ->
+    let self_url = Uri.to_string @@ fix_uri ~port uri in
     respond_with_string ~code:`OK
-    @@ Json.metadata ~oid ~size:(Unix.Stats.size stat) ~self_url:"self_url" ~download_url:"download_url"
+    @@ Json.metadata ~oid ~size:(Unix.Stats.size stat) ~self_url ~download_url:"download_url"
 
 let oid_from_path path =
   match String.rsplit2 path ~on:'/' with
@@ -77,19 +83,23 @@ let oid_from_path path =
     if is_sha256_hex_digest oid then Some (oid, `Object) else None
   | _ -> None
 
-let serve_client ~root ~body:_ _sock req =
+let serve_client ~root ~port ~body:_ _sock req =
   let uri = Request.uri req in
-  let path = Uri.path uri in
-  let meth = Request.meth req in
-  let oid = oid_from_path path in
-  match meth, oid with
-  | `GET, Some (oid, `Metadata) | `HEAD, Some (oid, `Metadata) ->
-    respond_object_metadata ~root ~meth ~oid
-  | `GET, Some (oid, `Object) | `HEAD, Some (oid, `Object) ->
-    respond_not_implemented ()
-  | `GET, None | `HEAD, None -> respond_not_found ~msg:"Wrong path"
-  | `POST, _ -> respond_not_implemented ()
-  | _ -> respond_not_implemented ()
+  if Option.is_none (Uri.host uri) then
+    respond_with_string
+      ~code:`Bad_request @@ Json.error "Wrong host"
+  else
+    let path = Uri.path uri in
+    let meth = Request.meth req in
+    let oid = oid_from_path path in
+    match meth, oid with
+    | `GET, Some (oid, `Metadata) | `HEAD, Some (oid, `Metadata) ->
+      respond_object_metadata ~root ~port ~uri ~meth ~oid
+    | `GET, Some (oid, `Object) | `HEAD, Some (oid, `Object) ->
+      respond_not_implemented ()
+    | `GET, None | `HEAD, None -> respond_not_found ~msg:"Wrong path"
+    | `POST, _ -> respond_not_implemented ()
+    | _ -> respond_not_implemented ()
 
 let start_server ~root ~host ~port () =
   eprintf "Listening for HTTP on port %d\n" port;
@@ -103,7 +113,7 @@ let start_server ~root ~host ~port () =
   Server.create
     ~on_handler_error:`Raise
     listen_on
-    (serve_client ~root)
+    (serve_client ~root ~port)
   >>= fun _ -> Deferred.never ()
 
 let () =
