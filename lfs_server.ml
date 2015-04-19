@@ -147,6 +147,7 @@ let oid_from_path path =
     if is_sha256_hex_digest oid then `Default_path oid else `Wrong_path
   | Some ("/data/objects", oid) ->
     if is_sha256_hex_digest oid then `Download_path oid else `Wrong_path
+  | Some ("", "objects") -> `Post_path
   | _ -> `Wrong_path
 
 (* TODO fix this *)
@@ -159,13 +160,24 @@ let handle_get root meth uri =
   match oid_from_path path with
   | `Default_path oid -> respond_object_metadata ~root ~meth ~uri ~oid
   | `Download_path oid -> respond_object ~root ~meth ~oid
-  | `Wrong_path -> respond_error ~meth ~code:`Not_found "Wrong path"
+  | `Post_path | `Wrong_path ->
+    respond_error ~meth ~code:`Not_found "Wrong path"
+
+let handle_verify root meth oid =
+  check_object_file_stat ~root ~oid
+  >>= function
+  | Ok _ -> Server.respond `OK
+  | Error _ ->
+    respond_error ~meth ~code:`Not_found
+      "Verification failed: object not found"
 
 let handle_post root meth uri body =
   let path = Uri.path uri in
-  if path <> "/objects" then
+  match oid_from_path path with
+  | `Download_path _ | `Wrong_path ->
     respond_error ~meth ~code:`Not_found "Wrong path"
-  else
+  | `Default_path oid -> handle_verify root meth oid
+  | `Post_path ->
     Body.to_string body >>= fun body ->
     Json.parse_oid_size body >>= function
     | None -> respond_error ~meth ~code:`Bad_request "Invalid body"
@@ -183,7 +195,7 @@ let handle_post root meth uri body =
 let handle_put root meth uri body =
   let path = Uri.path uri in
   match oid_from_path path with
-  | `Download_path _ | `Wrong_path ->
+  | `Download_path _ | `Post_path | `Wrong_path ->
     respond_error ~meth ~code:`Not_found "Wrong path"
   | `Default_path oid ->
     check_object_file_stat ~root ~oid >>= function
