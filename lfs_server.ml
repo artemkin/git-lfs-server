@@ -41,9 +41,9 @@ let is_sha256_hex_digest str =
   if String.length str <> 64 then false
   else String.for_all str ~f:Char.is_alphanum
 
-let respond_with_string ?(headers=Header.init ()) =
-  let headers = Header.add headers "Content-Type" "application/vnd.git-lfs+json" in
-  Server.respond_with_string ~headers
+let respond_with_string =
+  let headers = Header.add (Header.init ()) "Content-Type" "application/vnd.git-lfs+json" in
+  Server.respond_with_string ~flush:true ~headers
 
 let respond_not_found ~msg =
   respond_with_string
@@ -66,7 +66,7 @@ let fix_uri ~port uri =
   let uri = Uri.with_scheme uri (Some "http") in
   Uri.with_port uri (if port = 80 then None else Some port)
 
-let respond_object_metadata ~root ~port ~uri ~meth ~oid  =
+let respond_object_metadata ~root ~port ~uri ~oid  =
   let path = get_object_filename ~root ~oid in
   try_with (fun () -> Unix.stat path) >>= function
   | Error _ -> respond_not_found ~msg:"Object not found"
@@ -88,6 +88,8 @@ let oid_from_path path =
     if is_sha256_hex_digest oid then Some (oid, `Object) else None
   | _ -> None
 
+(* TODO fix HEAD responses *)
+
 let serve_client ~root ~port ~body:_ _sock req =
   let uri = Request.uri req in
   if Option.is_none (Uri.host uri) then
@@ -99,7 +101,7 @@ let serve_client ~root ~port ~body:_ _sock req =
     let oid = oid_from_path path in
     match meth, oid with
     | `GET, Some (oid, `Metadata) | `HEAD, Some (oid, `Metadata) ->
-      respond_object_metadata ~root ~port ~uri ~meth ~oid
+      respond_object_metadata ~root ~port ~uri ~oid
     | `GET, Some (oid, `Object) | `HEAD, Some (oid, `Object) ->
       respond_object ~root ~oid
     | `GET, None | `HEAD, None -> respond_not_found ~msg:"Wrong path"
