@@ -53,10 +53,6 @@ let respond_not_found ~meth ~msg =
   respond_with_string ~meth
     ~code:`Not_found @@ Json.error msg
 
-let respond_not_implemented () =
-  respond_with_string ~meth:`GET
-    ~code:`Not_implemented @@ Json.error "Not implemented"
-
 let get_oid_path ~oid =
   let oid02 = String.prefix oid 2 in
   let oid24 = String.sub oid ~pos:2 ~len:2 in
@@ -65,24 +61,18 @@ let get_oid_path ~oid =
 let get_object_filename ~root ~oid =
   Filename.of_parts [root; "/objects"; get_oid_path ~oid]
 
-(* TODO fix this *)
-let fix_uri ~port uri =
-  let uri = Uri.with_scheme uri (Some "http") in
-  Uri.with_port uri (if port = 80 then None else Some port)
-
-let respond_object_metadata ~root ~port ~uri ~meth ~oid  =
+let respond_object_metadata ~root ~meth ~oid ~uri =
   let path = get_object_filename ~root ~oid in
   try_with (fun () -> Unix.stat path) >>= function
   | Error _ -> respond_not_found ~meth ~msg:"Object not found"
   | Ok stat ->
-    let self_url = fix_uri ~port uri in
-    let download_url = Uri.with_path self_url @@ Filename.concat "/data/objects" oid in
+    let download_url = Uri.with_path uri @@ Filename.concat "/data/objects" oid in
     respond_with_string ~meth ~code:`OK
-    @@ Json.metadata ~oid ~size:(Unix.Stats.size stat) ~self_url ~download_url
+    @@ Json.metadata ~oid ~size:(Unix.Stats.size stat) ~self_url:uri ~download_url
 
 let respond_object ~root ~meth ~oid =
   let filename = get_object_filename ~root ~oid in
-  Monitor.try_with ~run:`Now
+  try_with ~run:`Now
     (fun () ->
        Reader.open_file filename
        >>= fun rd ->
@@ -100,10 +90,24 @@ let respond_object ~root ~meth ~oid =
 let oid_from_path path =
   match String.rsplit2 path ~on:'/' with
   | Some ("/objects", oid) ->
-    if is_sha256_hex_digest oid then Some (oid, `Metadata) else None
+    if is_sha256_hex_digest oid then `Metadata oid else `Empty
   | Some ("/data/objects", oid) ->
-    if is_sha256_hex_digest oid then Some (oid, `Object) else None
-  | _ -> None
+    if is_sha256_hex_digest oid then `Object oid else `Empty
+  | _ -> `Empty
+
+(* TODO fix this *)
+let fix_uri port uri =
+  let uri = Uri.with_scheme uri (Some "http") in
+  Uri.with_port uri (if port = 80 then None else Some port)
+
+let handle_get root meth uri =
+  let path = Uri.path uri in
+  match oid_from_path path with
+  | `Metadata oid -> respond_object_metadata ~root ~meth ~uri ~oid
+  | `Object oid -> respond_object ~root ~meth ~oid
+  | `Empty -> respond_not_found ~meth ~msg:"Wrong path"
+
+let handle_post =Server.respond `Method_not_allowed
 
 let serve_client ~root ~port ~body:_ _sock req =
   let uri = Request.uri req in
@@ -111,18 +115,11 @@ let serve_client ~root ~port ~body:_ _sock req =
     respond_with_string ~meth:`GET
       ~code:`Bad_request @@ Json.error "Wrong host"
   else
-    let path = Uri.path uri in
-    let meth = Request.meth req in
-    let oid = oid_from_path path in
-    match meth, oid with
-    | (`GET as meth), Some (oid, `Metadata) | (`HEAD as meth), Some (oid, `Metadata) ->
-      respond_object_metadata ~root ~port ~uri ~meth ~oid
-    | (`GET as meth), Some (oid, `Object) | (`HEAD as meth), Some (oid, `Object) ->
-      respond_object ~root ~meth ~oid
-    | (`GET as meth), None | (`HEAD as meth), None ->
-      respond_not_found ~meth ~msg:"Wrong path"
-    | `POST, _ -> respond_not_implemented ()
-    | _ -> respond_not_implemented ()
+    let uri = fix_uri port uri in
+    match Request.meth req with
+    | (`GET as meth) | (`HEAD as meth) -> handle_get root meth uri
+    | `POST -> handle_post
+    | _ -> Server.respond `Method_not_allowed
 
 let start_server ~root ~host ~port () =
   eprintf "Listening for HTTP on port %d\n" port;
