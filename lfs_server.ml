@@ -40,6 +40,14 @@ module Json = struct
       ] in
     Yojson.pretty_to_string msg
 
+  let download url =
+    let msg = `Assoc [
+        "_links", `Assoc [
+          "download", `Assoc [ "href", `String (Uri.to_string url) ]
+        ]
+      ] in
+    Yojson.pretty_to_string msg
+
   let upload url =
     let url = Uri.to_string url in
     let msg = `Assoc [
@@ -51,14 +59,17 @@ module Json = struct
     Yojson.pretty_to_string msg
 
   let parse_oid_size str =
-    match Yojson.Safe.from_string str with
-    | `Assoc ["oid", `String oid; "size", `Int size] ->
-      if is_sha256_hex_digest oid then Some (oid, Int64.of_int size) else None
-    | `Assoc ["oid", `String oid; "size", `Intlit size] ->
+    try_with (fun () -> return @@ Yojson.Safe.from_string str) >>= function
+    | Error _ -> return None
+    | Ok (`Assoc ["oid", `String oid; "size", `Int size]) ->
+      if is_sha256_hex_digest oid then
+        return (Some (oid, Int64.of_int size))
+      else return None
+    | Ok (`Assoc ["oid", `String oid; "size", `Intlit size]) ->
       let oid = if is_sha256_hex_digest oid then Some oid else None in
       let size = Option.try_with (fun () -> Int64.of_string size) in
-      Option.both oid size
-    | _ -> None
+      return @@ Option.both oid size
+    | Ok _ -> return None
 
 end
 
@@ -85,11 +96,14 @@ let check_object_file_stat ~root ~oid =
   let path = get_object_filename ~root ~oid in
   try_with (fun () -> Unix.stat path)
 
+let get_download_url uri oid =
+  Uri.with_path uri @@ Filename.concat "/data/objects" oid
+
 let respond_object_metadata ~root ~meth ~uri ~oid =
   check_object_file_stat ~root ~oid >>= function
   | Error _ -> respond_error ~meth ~code:`Not_found "Object not found"
   | Ok stat ->
-    let download_url = Uri.with_path uri @@ Filename.concat "/data/objects" oid in
+    let download_url = get_download_url uri oid in
     respond_with_string ~meth ~code:`OK
     @@ Json.metadata ~oid ~size:(Unix.Stats.size stat) ~self_url:uri ~download_url
 
@@ -136,17 +150,18 @@ let handle_post root meth uri body =
     respond_error ~meth ~code:`Not_found "Wrong path"
   else
     Body.to_string body >>= fun body ->
-    match Json.parse_oid_size body with
-    | None -> respond_error ~meth ~code:`Bad_request "Invalid JSON data"
+    Json.parse_oid_size body >>= function
+    | None -> respond_error ~meth ~code:`Bad_request "Invalid body"
     | Some (oid, size) ->
       check_object_file_stat ~root ~oid >>= function
       | Ok stat when (Unix.Stats.size stat = size) ->
-        Server.respond `OK
+        let url = get_download_url uri oid in
+        respond_with_string ~meth ~code:`OK @@ Json.download url
       | Ok _ ->
         respond_error ~meth ~code:`Bad_request "Wrong object size"
       | Error _ ->
         let url = Uri.with_path uri @@ Filename.concat "/upload/objects" oid in
-        respond_with_string ~meth ~code:`OK @@ Json.upload url
+        respond_with_string ~meth ~code:`Accepted @@ Json.upload url
 
 let serve_client ~root ~port ~body _sock req =
   let uri = Request.uri req in
