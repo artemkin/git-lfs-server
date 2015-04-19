@@ -192,25 +192,34 @@ let handle_post root meth uri body =
         let url = Uri.with_path uri @@ Filename.concat "/objects" oid in
         respond_with_string ~meth ~code:`Accepted @@ Json.upload url
 
-let handle_put root meth uri body =
+let handle_put root meth uri body req =
   let path = Uri.path uri in
-  match oid_from_path path with
-  | `Download_path _ | `Post_path | `Wrong_path ->
-    respond_error ~meth ~code:`Not_found "Wrong path"
-  | `Default_path oid ->
-    check_object_file_stat ~root ~oid >>= function
-    | Ok _ -> Server.respond `OK (* already exist *)
-    | Error _ ->
-      let filename = get_object_filename ~root ~oid in
-      let temp_file = get_temp_filename ~root ~oid in
-      mkdir_object_if_needed ~root ~oid >>= fun () ->
-      try_with (fun () ->
-          Writer.with_file_atomic ~temp_file ~fsync:true filename
-            ~f:(fun w ->
-                Pipe.transfer_id (Body.to_pipe body) (Writer.pipe w)))
-      >>= function
-      | Ok _ -> Server.respond `Created
-      | Error _ -> Server.respond `Internal_server_error
+  let headers = Request.headers req in
+  match Header.get_content_range headers with
+  | None -> Server.respond `Bad_request
+  | Some bytes_to_read ->
+    match oid_from_path path with
+    | `Download_path _ | `Post_path | `Wrong_path ->
+      respond_error ~meth ~code:`Not_found "Wrong path"
+    | `Default_path oid ->
+      check_object_file_stat ~root ~oid >>= function
+      | Ok _ -> Server.respond `OK (* already exist *)
+      | Error _ ->
+        let filename = get_object_filename ~root ~oid in
+        let temp_file = get_temp_filename ~root ~oid in
+        mkdir_object_if_needed ~root ~oid >>= fun () ->
+        try_with (fun () ->
+            Writer.with_file_atomic ~temp_file ~fsync:true filename ~f:(fun w ->
+                let received = ref 0 in
+                Pipe.transfer (Body.to_pipe body) (Writer.pipe w) ~f:(fun str ->
+                    received := !received + (String.length str);
+                    str) >>= fun () ->
+                if (Int64.of_int !received) = bytes_to_read
+                then Deferred.unit
+                else failwith "Not complete transfer")) (* TODO: Remove incomplete temp file *)
+        >>= function
+        | Ok _ -> Server.respond `Created
+        | Error _ -> Server.respond `Internal_server_error
 
 let serve_client ~root ~port ~body _sock req =
   let uri = Request.uri req in
@@ -222,7 +231,7 @@ let serve_client ~root ~port ~body _sock req =
     match Request.meth req with
     | (`GET as meth) | (`HEAD as meth) -> handle_get root meth uri
     | (`POST as meth) -> handle_post root meth uri body
-    | (`PUT as meth) -> handle_put root meth uri body
+    | (`PUT as meth) -> handle_put root meth uri body req
     | _ -> Server.respond `Method_not_allowed
 
 let start_server ~root ~host ~port () =
@@ -246,7 +255,7 @@ let start_server ~root ~host ~port () =
 
 let () =
   Command.async_basic
-    ~summary:"Start a Git LFS server"
+    ~summary:"Start Git LFS server"
     Command.Spec.(
       empty
       +> anon (maybe_with_default "./.lfs" ("root" %: string))
