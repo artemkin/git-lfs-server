@@ -20,6 +20,10 @@ open Async.Std
 open Cohttp
 open Cohttp_async
 
+let is_sha256_hex_digest str =
+  if String.length str <> 64 then false
+  else String.for_all str ~f:Char.is_alphanum
+
 module Json = struct
   let error msg =
     let msg = `Assoc [ "message", `String msg ] in
@@ -35,23 +39,39 @@ module Json = struct
         ]
       ] in
     Yojson.pretty_to_string msg
-end
 
-let is_sha256_hex_digest str =
-  if String.length str <> 64 then false
-  else String.for_all str ~f:Char.is_alphanum
+  let upload url =
+    let url = Uri.to_string url in
+    let msg = `Assoc [
+        "_links", `Assoc [
+          "upload", `Assoc [ "href", `String url ];
+          "verify", `Assoc [ "href", `String url ]
+        ]
+      ] in
+    Yojson.pretty_to_string msg
+
+  let parse_oid_size str =
+    match Yojson.Safe.from_string str with
+    | `Assoc ["oid", `String oid; "size", `Int size] ->
+      if is_sha256_hex_digest oid then Some (oid, Int64.of_int size) else None
+    | `Assoc ["oid", `String oid; "size", `Intlit size] ->
+      let oid = if is_sha256_hex_digest oid then Some oid else None in
+      let size = Option.try_with (fun () -> Int64.of_string size) in
+      Option.both oid size
+    | _ -> None
+
+end
 
 let add_content_type headers content_type =
   Header.add headers "content-type" content_type
 
 let respond_with_string ~meth ~code str =
   let headers = add_content_type (Header.init ()) "application/vnd.git-lfs+json" in
-  let body = match meth with `GET -> `String str | `HEAD -> `Empty in
+  let body = match meth with `GET | `POST -> `String str | `HEAD -> `Empty in
   Server.respond ~headers ~body code
 
-let respond_not_found ~meth ~msg =
-  respond_with_string ~meth
-    ~code:`Not_found @@ Json.error msg
+let respond_error ~meth ~code msg =
+  respond_with_string ~meth ~code @@ Json.error msg
 
 let get_oid_path ~oid =
   let oid02 = String.prefix oid 2 in
@@ -61,10 +81,13 @@ let get_oid_path ~oid =
 let get_object_filename ~root ~oid =
   Filename.of_parts [root; "/objects"; get_oid_path ~oid]
 
-let respond_object_metadata ~root ~meth ~oid ~uri =
+let check_object_file_stat ~root ~oid =
   let path = get_object_filename ~root ~oid in
-  try_with (fun () -> Unix.stat path) >>= function
-  | Error _ -> respond_not_found ~meth ~msg:"Object not found"
+  try_with (fun () -> Unix.stat path)
+
+let respond_object_metadata ~root ~meth ~uri ~oid =
+  check_object_file_stat ~root ~oid >>= function
+  | Error _ -> respond_error ~meth ~code:`Not_found "Object not found"
   | Ok stat ->
     let download_url = Uri.with_path uri @@ Filename.concat "/data/objects" oid in
     respond_with_string ~meth ~code:`OK
@@ -85,7 +108,7 @@ let respond_object ~root ~meth ~oid =
          Server.respond ~headers ~body:`Empty `OK)
   >>= function
   | Ok res -> return res
-  | Error _ -> respond_not_found ~meth ~msg:"Object not found"
+  | Error _ -> respond_error ~meth ~code:`Not_found "Object not found"
 
 let oid_from_path path =
   match String.rsplit2 path ~on:'/' with
@@ -105,11 +128,27 @@ let handle_get root meth uri =
   match oid_from_path path with
   | `Metadata oid -> respond_object_metadata ~root ~meth ~uri ~oid
   | `Object oid -> respond_object ~root ~meth ~oid
-  | `Empty -> respond_not_found ~meth ~msg:"Wrong path"
+  | `Empty -> respond_error ~meth ~code:`Not_found "Wrong path"
 
-let handle_post =Server.respond `Method_not_allowed
+let handle_post root meth uri body =
+  let path = Uri.path uri in
+  if path <> "/objects" then
+    respond_error ~meth ~code:`Not_found "Wrong path"
+  else
+    Body.to_string body >>= fun body ->
+    match Json.parse_oid_size body with
+    | None -> respond_error ~meth ~code:`Bad_request "Invalid JSON data"
+    | Some (oid, size) ->
+      check_object_file_stat ~root ~oid >>= function
+      | Ok stat when (Unix.Stats.size stat = size) ->
+        Server.respond `OK
+      | Ok _ ->
+        respond_error ~meth ~code:`Bad_request "Wrong object size"
+      | Error _ ->
+        let url = Uri.with_path uri @@ Filename.concat "/upload/objects" oid in
+        respond_with_string ~meth ~code:`OK @@ Json.upload url
 
-let serve_client ~root ~port ~body:_ _sock req =
+let serve_client ~root ~port ~body _sock req =
   let uri = Request.uri req in
   if Option.is_none (Uri.host uri) then
     respond_with_string ~meth:`GET
@@ -118,7 +157,7 @@ let serve_client ~root ~port ~body:_ _sock req =
     let uri = fix_uri port uri in
     match Request.meth req with
     | (`GET as meth) | (`HEAD as meth) -> handle_get root meth uri
-    | `POST -> handle_post
+    | (`POST as meth) -> handle_post root meth uri body
     | _ -> Server.respond `Method_not_allowed
 
 let start_server ~root ~host ~port () =
