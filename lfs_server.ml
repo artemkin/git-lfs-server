@@ -30,8 +30,8 @@ module Json = struct
         "oid", `String oid;
         "size", `Intlit (Int64.to_string size);
         "_links", `Assoc [
-          "self", `Assoc [ "href", `String self_url ];
-          "download", `Assoc [ "href", `String download_url ]
+          "self", `Assoc [ "href", `String (Uri.to_string self_url) ];
+          "download", `Assoc [ "href", `String (Uri.to_string download_url) ]
         ]
       ] in
     Yojson.pretty_to_string msg
@@ -58,7 +58,7 @@ let get_oid_path ~oid =
   let oid24 = String.sub oid ~pos:2 ~len:2 in
   Filename.of_parts [oid02; oid24; oid]
 
-let get_object_path ~root ~oid =
+let get_object_filename ~root ~oid =
   Filename.of_parts [root; "/objects"; get_oid_path ~oid]
 
 (* TODO fix this *)
@@ -67,13 +67,18 @@ let fix_uri ~port uri =
   Uri.with_port uri (if port = 80 then None else Some port)
 
 let respond_object_metadata ~root ~port ~uri ~meth ~oid  =
-  let file = get_object_path ~root ~oid in
-  try_with (fun () -> Unix.stat file) >>= function
+  let path = get_object_filename ~root ~oid in
+  try_with (fun () -> Unix.stat path) >>= function
   | Error _ -> respond_not_found ~msg:"Object not found"
   | Ok stat ->
-    let self_url = Uri.to_string @@ fix_uri ~port uri in
-    respond_with_string ~code:`OK
-    @@ Json.metadata ~oid ~size:(Unix.Stats.size stat) ~self_url ~download_url:"download_url"
+      let self_url = fix_uri ~port uri in
+      let download_url = Uri.with_path self_url @@ Filename.concat "/data/objects" oid in
+      respond_with_string ~code:`OK
+      @@ Json.metadata ~oid ~size:(Unix.Stats.size stat) ~self_url ~download_url
+
+let respond_object ~root ~oid =
+  let filename = get_object_filename ~root ~oid in
+  Server.respond_with_file filename
 
 let oid_from_path path =
   match String.rsplit2 path ~on:'/' with
@@ -96,7 +101,7 @@ let serve_client ~root ~port ~body:_ _sock req =
     | `GET, Some (oid, `Metadata) | `HEAD, Some (oid, `Metadata) ->
       respond_object_metadata ~root ~port ~uri ~meth ~oid
     | `GET, Some (oid, `Object) | `HEAD, Some (oid, `Object) ->
-      respond_not_implemented ()
+      respond_object ~root ~oid
     | `GET, None | `HEAD, None -> respond_not_found ~msg:"Wrong path"
     | `POST, _ -> respond_not_implemented ()
     | _ -> respond_not_implemented ()
