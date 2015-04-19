@@ -41,16 +41,20 @@ let is_sha256_hex_digest str =
   if String.length str <> 64 then false
   else String.for_all str ~f:Char.is_alphanum
 
-let respond_with_string =
-  let headers = Header.add (Header.init ()) "Content-Type" "application/vnd.git-lfs+json" in
-  Server.respond_with_string ~flush:true ~headers
+let add_content_type headers content_type =
+  Header.add headers "content-type" content_type
 
-let respond_not_found ~msg =
-  respond_with_string
+let respond_with_string ~meth ~code str =
+  let headers = add_content_type (Header.init ()) "application/vnd.git-lfs+json" in
+  let body = match meth with `GET -> `String str | `HEAD -> `Empty in
+  Server.respond ~headers ~body code
+
+let respond_not_found ~meth ~msg =
+  respond_with_string ~meth
     ~code:`Not_found @@ Json.error msg
 
 let respond_not_implemented () =
-  respond_with_string
+  respond_with_string ~meth:`GET
     ~code:`Not_implemented @@ Json.error "Not implemented"
 
 let get_oid_path ~oid =
@@ -66,19 +70,32 @@ let fix_uri ~port uri =
   let uri = Uri.with_scheme uri (Some "http") in
   Uri.with_port uri (if port = 80 then None else Some port)
 
-let respond_object_metadata ~root ~port ~uri ~oid  =
+let respond_object_metadata ~root ~port ~uri ~meth ~oid  =
   let path = get_object_filename ~root ~oid in
   try_with (fun () -> Unix.stat path) >>= function
-  | Error _ -> respond_not_found ~msg:"Object not found"
+  | Error _ -> respond_not_found ~meth ~msg:"Object not found"
   | Ok stat ->
-      let self_url = fix_uri ~port uri in
-      let download_url = Uri.with_path self_url @@ Filename.concat "/data/objects" oid in
-      respond_with_string ~code:`OK
-      @@ Json.metadata ~oid ~size:(Unix.Stats.size stat) ~self_url ~download_url
+    let self_url = fix_uri ~port uri in
+    let download_url = Uri.with_path self_url @@ Filename.concat "/data/objects" oid in
+    respond_with_string ~meth ~code:`OK
+    @@ Json.metadata ~oid ~size:(Unix.Stats.size stat) ~self_url ~download_url
 
-let respond_object ~root ~oid =
+let respond_object ~root ~meth ~oid =
   let filename = get_object_filename ~root ~oid in
-  Server.respond_with_file filename
+  Monitor.try_with ~run:`Now
+    (fun () ->
+       Reader.open_file filename
+       >>= fun rd ->
+       let headers = add_content_type (Header.init ()) "application/octet-stream" in
+       match meth with
+       | `GET ->
+         Server.respond ~headers ~body:(`Pipe (Reader.pipe rd)) `OK
+       | `HEAD ->
+         Reader.close rd >>= fun () ->
+         Server.respond ~headers ~body:`Empty `OK)
+  >>= function
+  | Ok res -> return res
+  | Error _ -> respond_not_found ~meth ~msg:"Object not found"
 
 let oid_from_path path =
   match String.rsplit2 path ~on:'/' with
@@ -88,23 +105,22 @@ let oid_from_path path =
     if is_sha256_hex_digest oid then Some (oid, `Object) else None
   | _ -> None
 
-(* TODO fix HEAD responses *)
-
 let serve_client ~root ~port ~body:_ _sock req =
   let uri = Request.uri req in
   if Option.is_none (Uri.host uri) then
-    respond_with_string
+    respond_with_string ~meth:`GET
       ~code:`Bad_request @@ Json.error "Wrong host"
   else
     let path = Uri.path uri in
     let meth = Request.meth req in
     let oid = oid_from_path path in
     match meth, oid with
-    | `GET, Some (oid, `Metadata) | `HEAD, Some (oid, `Metadata) ->
-      respond_object_metadata ~root ~port ~uri ~oid
-    | `GET, Some (oid, `Object) | `HEAD, Some (oid, `Object) ->
-      respond_object ~root ~oid
-    | `GET, None | `HEAD, None -> respond_not_found ~msg:"Wrong path"
+    | (`GET as meth), Some (oid, `Metadata) | (`HEAD as meth), Some (oid, `Metadata) ->
+      respond_object_metadata ~root ~port ~uri ~meth ~oid
+    | (`GET as meth), Some (oid, `Object) | (`HEAD as meth), Some (oid, `Object) ->
+      respond_object ~root ~meth ~oid
+    | (`GET as meth), None | (`HEAD as meth), None ->
+      respond_not_found ~meth ~msg:"Wrong path"
     | `POST, _ -> respond_not_implemented ()
     | _ -> respond_not_implemented ()
 
