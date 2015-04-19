@@ -235,10 +235,10 @@ let serve_client ~root ~port ~body _sock req =
     | _ -> Server.respond `Method_not_allowed
 
 let start_server ~root ~host ~port () =
-  mkdir_if_needed @@ Filename.concat root "/objects"
-  >>= fun () ->
-  mkdir_if_needed @@ Filename.concat root "/temp"
-  >>= fun () ->
+  let root = Filename.concat root "/.lfs" in
+  mkdir_if_needed root >>= fun () ->
+  mkdir_if_needed @@ Filename.concat root "/objects" >>= fun () ->
+  mkdir_if_needed @@ Filename.concat root "/temp" >>= fun () ->
   eprintf "Listening for HTTP on port %d\n" port;
   Unix.Inet_addr.of_string_or_getbyname host
   >>= fun host ->
@@ -258,7 +258,7 @@ let () =
     ~summary:"Start Git LFS server"
     Command.Spec.(
       empty
-      +> anon (maybe_with_default "./.lfs" ("root" %: string))
+      +> anon (maybe_with_default "." ("root" %: string))
       +> flag "-s" (optional_with_default "127.0.0.1" string) ~doc:"address IP address to listen on"
       +> flag "-p" (optional_with_default 8080 int) ~doc:"port TCP port to listen on"
     )
