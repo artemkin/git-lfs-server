@@ -22,7 +22,7 @@ Start Git LFS server
 By default, it starts on `http://localhost:8080` and treats current directory as `ROOT`. All object files are stored locally in `ROOT/.lfs/objects` directory.
 
 ## TODO
-* HTTPS support (trivial to add)
+* ~~HTTPS support (trivial to add)~~
 * Authentication
 * Upload validation (calculate SHA-256 digest)
 * ~~Speed-up uploading~~ (fixed in `cohttp`, see [#330](https://github.com/mirage/ocaml-cohttp/pull/330))
