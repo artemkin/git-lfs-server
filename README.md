@@ -25,4 +25,6 @@ By default, it starts on `http://localhost:8080` and treats current directory as
 * HTTPS support (trivial to add)
 * Authentication
 * Upload validation (calculate SHA-256 digest)
-* Speed-up uploading
+* ~~Speed-up uploading~~ (fixed in `cohttp`, see [#330](https://github.com/mirage/ocaml-cohttp/pull/330))
+* Multi server support
+* Automated tests
