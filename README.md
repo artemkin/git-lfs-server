@@ -5,13 +5,14 @@ Simple HTTP(S) server for [Git Large File Storage](https://git-lfs.github.com).
 
 ```
 $ ./lfs_server -help
-
 Start Git LFS server
 
   lfs_server [ROOT]
 
 === flags ===
 
+  [-cert file]   File of certificate for https
+  [-key file]    File of private key for https
   [-p port]      TCP port to listen on
   [-s address]   IP address to listen on
   [-build-info]  print info about this build and exit
