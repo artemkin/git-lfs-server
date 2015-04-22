@@ -263,5 +263,5 @@ let () =
       +> flag "-p" (optional_with_default 8080 int) ~doc:"port TCP port to listen on"
     )
     (fun root host port -> start_server ~root ~host ~port)
-  |> Command.run
+  |> fun command -> Command.run ~version:"0.1" ~build_info:"Master" command
 

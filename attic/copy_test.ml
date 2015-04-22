@@ -7,7 +7,9 @@ let run () =
   let output = Filename.concat "." Sys.argv.(2) in
   Reader.with_file input ~f:(fun r ->
     Writer.with_file output ~f:(fun w ->
-        Pipe.transfer_id (Reader.pipe r) (Writer.pipe w)))
+        Pipe.transfer (Reader.pipe r) (Writer.pipe w) ~f:(fun s ->
+          eprintf "Transfered: %d\n" (String.length s);
+          s)))
   >>| fun () -> (Shutdown.shutdown 0)
 
 let () =
