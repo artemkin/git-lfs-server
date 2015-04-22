@@ -1,7 +1,7 @@
 
 # Git LFS server
 
-Simple HTTP server for [Git Large File Storage](https://git-lfs.github.com).
+Simple HTTP(S) server for [Git Large File Storage](https://git-lfs.github.com).
 
 ```
 $ ./lfs_server -help
