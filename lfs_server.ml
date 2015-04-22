@@ -234,12 +234,20 @@ let serve_client ~root ~port ~body _sock req =
     | (`PUT as meth) -> handle_put root meth uri body req
     | _ -> Server.respond `Method_not_allowed
 
-let start_server ~root ~host ~port () =
+let determine_mode cert key =
+  match (cert, key) with
+  | Some c, Some k -> `OpenSSL (`Crt_file_path c, `Key_file_path k)
+  | None, None -> `TCP
+  | _ -> failwith "Error: must specify both certificate and key for HTTPS"
+
+let start_server ~root ~host ~port ~cert ~key () =
   let root = Filename.concat root "/.lfs" in
   mkdir_if_needed root >>= fun () ->
   mkdir_if_needed @@ Filename.concat root "/objects" >>= fun () ->
   mkdir_if_needed @@ Filename.concat root "/temp" >>= fun () ->
-  eprintf "Listening for HTTP on port %d\n" port;
+  let mode = determine_mode cert key in
+  let mode_str = (match mode with `OpenSSL _ -> "HTTPS" | `TCP -> "HTTP") in
+  printf "Listening for %s on %s:%d\n%!" mode_str host port;
   Unix.Inet_addr.of_string_or_getbyname host
   >>= fun host ->
   let listen_on = Tcp.Where_to_listen.create
@@ -249,6 +257,7 @@ let start_server ~root ~host ~port () =
   in
   Server.create
     ~on_handler_error:`Raise
+    ~mode
     listen_on
     (serve_client ~root ~port)
   >>= fun _ -> Deferred.never ()
@@ -261,7 +270,10 @@ let () =
       +> anon (maybe_with_default "." ("root" %: string))
       +> flag "-s" (optional_with_default "127.0.0.1" string) ~doc:"address IP address to listen on"
       +> flag "-p" (optional_with_default 8080 int) ~doc:"port TCP port to listen on"
+      +> flag "-cert" (optional file) ~doc:"file File of certificate for https"
+      +> flag "-key" (optional file) ~doc:"file File of private key for https"
     )
-    (fun root host port -> start_server ~root ~host ~port)
+    (fun root host port cert key ->
+       start_server ~root ~host ~port ~cert ~key)
   |> fun command -> Command.run ~version:"0.1" ~build_info:"Master" command
 
