@@ -275,5 +275,5 @@ let () =
     )
     (fun root host port cert key ->
        start_server ~root ~host ~port ~cert ~key)
-  |> fun command -> Command.run ~version:"0.1" ~build_info:"Master" command
+  |> fun command -> Command.run ~version:"0.1.0" ~build_info:"Master" command
 
