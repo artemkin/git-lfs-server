@@ -328,5 +328,5 @@ let () =
     )
     (fun root host port cert key verbose ->
        start_server ~root ~host ~port ~cert ~key ~verbose)
-  |> fun command -> Command.run ~version:"0.1.1" ~build_info:"Master" command
+  |> fun command -> Command.run ~version:Lfs_config.version ~build_info:"Master" command
 
