@@ -232,7 +232,9 @@ let handle_put root meth uri body req =
                 str) >>= fun () ->
             if (Int64.of_int !received) = bytes_to_read
             then respond_ok ~code:`Created
-            else failwith "Incomplete transfer") (* TODO: Remove incomplete temp file *)
+            else
+              let err = sprintf "Incomplete upload of %s" oid in
+              failwith err) (* TODO: Remove incomplete temp file *)
 
 let serve_client ~root ~port ~body ~req =
   let uri = Request.uri req in
@@ -264,16 +266,19 @@ let serve_client_and_log_respond ~root ~port ~logger ~body (`Inet (client_host, 
 
 let determine_mode cert key =
   match (cert, key) with
-  | Some c, Some k -> `OpenSSL (`Crt_file_path c, `Key_file_path k)
-  | None, None -> `TCP
-  | _ -> failwith "Error: must specify both certificate and key for HTTPS"
+  | Some c, Some k -> return (`OpenSSL (`Crt_file_path c, `Key_file_path k))
+  | None, None -> return `TCP
+  | _ ->
+      eprintf "Error: must specify both certificate and key for HTTPS\n";
+      shutdown 0;
+      Deferred.never ()
 
 let start_server ~root ~host ~port ~cert ~key ~verbose () =
   let root = Filename.concat root "/.lfs" in
   mkdir_if_needed root >>= fun () ->
   mkdir_if_needed @@ Filename.concat root "/objects" >>= fun () ->
   mkdir_if_needed @@ Filename.concat root "/temp" >>= fun () ->
-  let mode = determine_mode cert key in
+  determine_mode cert key >>= fun mode ->
   let mode_str = (match mode with `OpenSSL _ -> "HTTPS" | `TCP -> "HTTP") in
   let logging_level = if verbose then `Info else `Error in
   let logger = Log.create ~output:[Log.Output.stdout ()] ~level:logging_level in
