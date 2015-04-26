@@ -23,6 +23,12 @@ Start Git LFS server
 ```
 By default, it starts on `http://localhost:8080` and treats current directory as `ROOT`. All object files are stored locally in `ROOT/.lfs/objects` directory.
 
+## INSTALL
+
+From binary packages:
+* [Linux x64](https://github.com/artemkin/git-lfs-server/releases/download/v0.1.1/lfs_server-0.1.1-linux.x64.tar.gz)
+* [Mac OS X x64](https://github.com/artemkin/git-lfs-server/releases/download/v0.1.1/lfs_server-0.1.1-osx.x64.tar.gz)
+
 ## TODO
 * Remove incomplete/broken temporary files
 * Upload validation (calculate SHA-256 digest)
