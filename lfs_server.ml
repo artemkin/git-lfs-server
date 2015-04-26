@@ -167,11 +167,6 @@ let oid_from_path path =
   | Some ("", "objects") -> `Post_path
   | _ -> `Wrong_path
 
-(* TODO fix this *)
-let fix_uri port uri =
-  let uri = Uri.with_scheme uri (Some "http") in
-  Uri.with_port uri (if port = 80 then None else Some port)
-
 let handle_get root meth uri =
   let path = Uri.path uri in
   match oid_from_path path with
@@ -236,21 +231,21 @@ let handle_put root meth uri body req =
               let err = sprintf "Incomplete upload of %s" oid in
               failwith err) (* TODO: Remove incomplete temp file *)
 
-let serve_client ~root ~port ~body ~req =
+let serve_client ~root ~fix_uri ~body ~req =
   let uri = Request.uri req in
   let meth = Request.meth req in
   if Option.is_none (Uri.host uri) then
     respond_error_with_message ~meth ~code:`Bad_request "Wrong host"
   else
-    let uri = fix_uri port uri in
+    let uri = fix_uri uri in
     match meth with
     | (`GET as meth) | (`HEAD as meth) -> handle_get root meth uri
     | `POST -> handle_post root meth uri body
     | `PUT -> handle_put root meth uri body req
     | _ -> respond_error ~code:`Method_not_allowed
 
-let serve_client_and_log_respond ~root ~port ~logger ~body (`Inet (client_host, _)) req =
-  serve_client ~root ~port ~body ~req >>| fun (resp, log_info) ->
+let serve_client_and_log_respond ~root ~fix_uri ~logger ~body (`Inet (client_host, _)) req =
+  serve_client ~root ~fix_uri ~body ~req >>| fun (resp, log_info) ->
   let client_host = UnixLabels.string_of_inet_addr client_host in
   let meth = Code.string_of_method @@ Request.meth req in
   let path = Uri.path @@ Request.uri req in
@@ -300,11 +295,23 @@ let start_server ~root ~host ~port ~cert ~key ~verbose () =
       | Unix.Unix_error (_, err, _) -> Log.error logger "%s Unix_error: %s" client_host err
       | ex -> Log.error logger "%s Exception: %s" client_host (Exn.to_string ex)
   in
+  let fix_uri =
+    let with_default_port default_port =
+      if port = default_port then None else Some port
+    in
+    let scheme, port = match mode with
+    | `OpenSSL _ -> Some "https", (with_default_port 443)
+    | `TCP -> Some "http", (with_default_port 80)
+    in
+    fun uri ->
+      let uri = Uri.with_scheme uri scheme in
+      Uri.with_port uri port
+  in
   Server.create
     ~on_handler_error:(`Call handle_error)
     ~mode
     listen_on
-    (serve_client_and_log_respond ~root ~port ~logger)
+    (serve_client_and_log_respond ~root ~fix_uri ~logger)
   >>= fun _ -> Deferred.never ()
 
 let () =
