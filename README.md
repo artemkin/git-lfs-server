@@ -15,6 +15,7 @@ Start Git LFS server
   [-key file]    File of private key for https
   [-p port]      TCP port to listen on
   [-s address]   IP address to listen on
+  [-verbose]     Verbose logging
   [-build-info]  print info about this build and exit
   [-version]     print the version of this build and exit
   [-help]        print this help text and exit
@@ -27,7 +28,7 @@ By default, it starts on `http://localhost:8080` and treats current directory as
 * Upload validation (calculate SHA-256 digest)
 * Multi server support
 * Automated tests
-* Setup Travis continous builds
+* Setup Travis continuous builds
 * Setup Coverals
 * Create OPAM package
 * Authentication
