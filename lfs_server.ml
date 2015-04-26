@@ -76,13 +76,30 @@ end
 let add_content_type headers content_type =
   Header.add headers "content-type" content_type
 
-let respond_with_string ~meth ~code str =
+let respond ~headers ~body ~code =
+  Server.respond ~headers ~body code >>| fun resp ->
+  resp, `Log_ok code
+
+let respond_ok ~code =
+  Server.respond code >>| fun resp ->
+  resp, `Log_ok code
+
+let respond_error ~code =
+  Server.respond code >>| fun resp ->
+  resp, `Log_error (code, "")
+
+let prepare_string_respond ~meth ~code msg =
   let headers = add_content_type (Header.init ()) "application/vnd.git-lfs+json" in
-  let body = match meth with `GET | `POST | `PUT -> `String str | `HEAD -> `Empty in
+  let body = match meth with `HEAD -> `Empty | _ -> `String msg in
   Server.respond ~headers ~body code
 
-let respond_error ~meth ~code msg =
-  respond_with_string ~meth ~code @@ Json.error msg
+let respond_with_string ~meth ~code msg =
+  prepare_string_respond ~meth ~code msg >>| fun resp ->
+  resp, `Log_ok code
+
+let respond_error_with_message ~meth ~code msg =
+  prepare_string_respond ~meth ~code @@ Json.error msg >>| fun resp ->
+  resp, `Log_error (code, msg)
 
 let mkdir_if_needed dirname =
   try_with (fun () -> Unix.stat dirname) >>= function
@@ -94,7 +111,7 @@ let mkdir_if_needed dirname =
 let get_oid_prefixes ~oid =
   (String.prefix oid 2, String.sub oid ~pos:2 ~len:2)
 
-let mkdir_object_if_needed ~root ~oid =
+let make_objects_dir_if_needed ~root ~oid =
   let (oid02, oid24) = get_oid_prefixes ~oid in
   let dir02 = Filename.of_parts [root; "/objects"; oid02] in
   let dir24 = Filename.concat dir02 oid24 in
@@ -118,7 +135,7 @@ let get_download_url uri oid =
 
 let respond_object_metadata ~root ~meth ~uri ~oid =
   check_object_file_stat ~root ~oid >>= function
-  | Error _ -> respond_error ~meth ~code:`Not_found "Object not found"
+  | Error _ -> respond_error_with_message ~meth ~code:`Not_found "Object not found"
   | Ok stat ->
     let download_url = get_download_url uri oid in
     respond_with_string ~meth ~code:`OK
@@ -133,13 +150,13 @@ let respond_object ~root ~meth ~oid =
        let headers = add_content_type (Header.init ()) "application/octet-stream" in
        match meth with
        | `GET ->
-         Server.respond ~headers ~body:(`Pipe (Reader.pipe rd)) `OK
+         respond ~headers ~body:(`Pipe (Reader.pipe rd)) ~code:`OK
        | `HEAD ->
          Reader.close rd >>= fun () ->
-         Server.respond ~headers ~body:`Empty `OK)
+         respond ~headers ~body:`Empty ~code:`OK)
   >>= function
   | Ok res -> return res
-  | Error _ -> respond_error ~meth ~code:`Not_found "Object not found"
+  | Error _ -> respond_error_with_message ~meth ~code:`Not_found "Object not found"
 
 let oid_from_path path =
   match String.rsplit2 path ~on:'/' with
@@ -161,33 +178,33 @@ let handle_get root meth uri =
   | `Default_path oid -> respond_object_metadata ~root ~meth ~uri ~oid
   | `Download_path oid -> respond_object ~root ~meth ~oid
   | `Post_path | `Wrong_path ->
-    respond_error ~meth ~code:`Not_found "Wrong path"
+    respond_error_with_message ~meth ~code:`Not_found "Wrong path"
 
 let handle_verify root meth oid =
   check_object_file_stat ~root ~oid
   >>= function
-  | Ok _ -> Server.respond `OK
+  | Ok _ -> respond_ok ~code:`OK
   | Error _ ->
-    respond_error ~meth ~code:`Not_found
+    respond_error_with_message ~meth ~code:`Not_found
       "Verification failed: object not found"
 
 let handle_post root meth uri body =
   let path = Uri.path uri in
   match oid_from_path path with
   | `Download_path _ | `Wrong_path ->
-    respond_error ~meth ~code:`Not_found "Wrong path"
+    respond_error_with_message ~meth ~code:`Not_found "Wrong path"
   | `Default_path oid -> handle_verify root meth oid
   | `Post_path ->
     Body.to_string body >>= fun body ->
     Json.parse_oid_size body >>= function
-    | None -> respond_error ~meth ~code:`Bad_request "Invalid body"
+    | None -> respond_error_with_message ~meth ~code:`Bad_request "Invalid body"
     | Some (oid, size) ->
       check_object_file_stat ~root ~oid >>= function
       | Ok stat when (Unix.Stats.size stat = size) ->
         let url = get_download_url uri oid in
         respond_with_string ~meth ~code:`OK @@ Json.download url
       | Ok _ ->
-        respond_error ~meth ~code:`Bad_request "Wrong object size"
+        respond_error_with_message ~meth ~code:`Bad_request "Wrong object size"
       | Error _ ->
         let url = Uri.with_path uri @@ Filename.concat "/objects" oid in
         respond_with_string ~meth ~code:`Accepted @@ Json.upload url
@@ -196,18 +213,18 @@ let handle_put root meth uri body req =
   let path = Uri.path uri in
   let headers = Request.headers req in
   match Header.get_content_range headers with
-  | None -> Server.respond `Bad_request
+  | None -> respond_error ~code:`Bad_request
   | Some bytes_to_read ->
     match oid_from_path path with
     | `Download_path _ | `Post_path | `Wrong_path ->
-      respond_error ~meth ~code:`Not_found "Wrong path"
+      respond_error_with_message ~meth ~code:`Not_found "Wrong path"
     | `Default_path oid ->
       check_object_file_stat ~root ~oid >>= function
-      | Ok _ -> Server.respond `OK (* already exist *)
+      | Ok _ -> respond_ok ~code:`OK (* already exist *)
       | Error _ ->
         let filename = get_object_filename ~root ~oid in
         let temp_file = get_temp_filename ~root ~oid in
-        mkdir_object_if_needed ~root ~oid >>= fun () ->
+        make_objects_dir_if_needed ~root ~oid >>= fun () ->
         try_with (fun () ->
             Writer.with_file_atomic ~temp_file ~fsync:true filename ~f:(fun w ->
                 let received = ref 0 in
@@ -218,21 +235,36 @@ let handle_put root meth uri body req =
                 then Deferred.unit
                 else failwith "Not complete transfer")) (* TODO: Remove incomplete temp file *)
         >>= function
-        | Ok _ -> Server.respond `Created
-        | Error _ -> Server.respond `Internal_server_error
+        | Ok _ -> respond_ok ~code:`Created
+        | Error _ -> respond_error ~code:`Internal_server_error
 
-let serve_client ~root ~port ~body _sock req =
+let serve_client ~root ~port ~body ~req =
   let uri = Request.uri req in
+  let meth = Request.meth req in
   if Option.is_none (Uri.host uri) then
-    respond_with_string ~meth:`GET
-      ~code:`Bad_request @@ Json.error "Wrong host"
+    respond_error_with_message ~meth ~code:`Bad_request "Wrong host"
   else
     let uri = fix_uri port uri in
-    match Request.meth req with
+    match meth with
     | (`GET as meth) | (`HEAD as meth) -> handle_get root meth uri
-    | (`POST as meth) -> handle_post root meth uri body
-    | (`PUT as meth) -> handle_put root meth uri body req
-    | _ -> Server.respond `Method_not_allowed
+    | `POST -> handle_post root meth uri body
+    | `PUT -> handle_put root meth uri body req
+    | _ -> respond_error ~code:`Method_not_allowed
+
+let serve_client_and_log_respond ~root ~port ~logger ~body (`Inet (client_host, _)) req =
+  serve_client ~root ~port ~body ~req >>| fun (resp, log_info) ->
+  let client_host = UnixLabels.string_of_inet_addr client_host in
+  let meth = Code.string_of_method @@ Request.meth req in
+  let path = Uri.path @@ Request.uri req in
+  let version = Code.string_of_version @@ Request.version req in
+  (match log_info with
+  | `Log_ok status ->
+      let status = Code.string_of_status status in
+      Log.info logger "%s \"%s %s %s\" %s" client_host meth path version status
+  | `Log_error (status, msg) ->
+      let status = Code.string_of_status status in
+      Log.error logger "%s \"%s %s %s\" %s \"%s\"" client_host meth path version status msg);
+  resp
 
 let determine_mode cert key =
   match (cert, key) with
@@ -240,14 +272,16 @@ let determine_mode cert key =
   | None, None -> `TCP
   | _ -> failwith "Error: must specify both certificate and key for HTTPS"
 
-let start_server ~root ~host ~port ~cert ~key () =
+let start_server ~root ~host ~port ~cert ~key ~verbose () =
   let root = Filename.concat root "/.lfs" in
   mkdir_if_needed root >>= fun () ->
   mkdir_if_needed @@ Filename.concat root "/objects" >>= fun () ->
   mkdir_if_needed @@ Filename.concat root "/temp" >>= fun () ->
   let mode = determine_mode cert key in
   let mode_str = (match mode with `OpenSSL _ -> "HTTPS" | `TCP -> "HTTP") in
-  printf "Listening for %s on %s:%d\n%!" mode_str host port;
+  let logging_level = if verbose then `Info else `Error in
+  let logger = Log.create ~output:[Log.Output.stdout ()] ~level:logging_level in
+  Log.raw logger "Listening for %s on %s:%d\n%!" mode_str host port;
   Unix.Inet_addr.of_string_or_getbyname host
   >>= fun host ->
   let listen_on = Tcp.Where_to_listen.create
@@ -259,7 +293,7 @@ let start_server ~root ~host ~port ~cert ~key () =
     ~on_handler_error:`Raise
     ~mode
     listen_on
-    (serve_client ~root ~port)
+    (serve_client_and_log_respond ~root ~port ~logger)
   >>= fun _ -> Deferred.never ()
 
 let () =
@@ -272,8 +306,9 @@ let () =
       +> flag "-p" (optional_with_default 8080 int) ~doc:"port TCP port to listen on"
       +> flag "-cert" (optional file) ~doc:"file File of certificate for https"
       +> flag "-key" (optional file) ~doc:"file File of private key for https"
+      +> flag "-verbose" (no_arg) ~doc:" Verbose logging"
     )
-    (fun root host port cert key ->
-       start_server ~root ~host ~port ~cert ~key)
-  |> fun command -> Command.run ~version:"0.1.0" ~build_info:"Master" command
+    (fun root host port cert key verbose ->
+       start_server ~root ~host ~port ~cert ~key ~verbose)
+  |> fun command -> Command.run ~version:"0.1.1" ~build_info:"Master" command
 
