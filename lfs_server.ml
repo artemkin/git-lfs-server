@@ -59,7 +59,7 @@ module Json = struct
     Yojson.pretty_to_string msg
 
   let parse_oid_size str =
-    try_with (fun () -> return @@ Yojson.Safe.from_string str)
+    try_with ~run:`Now (fun () -> return @@ Yojson.Safe.from_string str)
     >>| function
     | Error _ -> None
     | Ok (`Assoc ["oid", `String oid; "size", `Int size]) ->
@@ -102,10 +102,10 @@ let respond_error_with_message ~meth ~code msg =
   resp, `Log_error (code, msg)
 
 let mkdir_if_needed dirname =
-  try_with (fun () -> Unix.stat dirname) >>= function
+  try_with ~run:`Now (fun () -> Unix.stat dirname) >>= function
   | Ok _ -> Deferred.unit
   | Error _ ->
-    try_with (fun () -> Unix.mkdir dirname)
+    try_with ~run:`Now (fun () -> Unix.mkdir dirname)
     >>= fun _ -> Deferred.unit
 
 let get_oid_prefixes ~oid =
@@ -128,7 +128,7 @@ let get_temp_filename ~root ~oid =
 
 let check_object_file_stat ~root ~oid =
   let filename = get_object_filename ~root ~oid in
-  try_with (fun () -> Unix.stat filename)
+  try_with ~run:`Now (fun () -> Unix.stat filename)
 
 let get_download_url uri oid =
   Uri.with_path uri @@ Filename.concat "/data/objects" oid
@@ -225,18 +225,14 @@ let handle_put root meth uri body req =
         let filename = get_object_filename ~root ~oid in
         let temp_file = get_temp_filename ~root ~oid in
         make_objects_dir_if_needed ~root ~oid >>= fun () ->
-        try_with (fun () ->
-            Writer.with_file_atomic ~temp_file ~fsync:true filename ~f:(fun w ->
-                let received = ref 0 in
-                Pipe.transfer (Body.to_pipe body) (Writer.pipe w) ~f:(fun str ->
-                    received := !received + (String.length str);
-                    str) >>= fun () ->
-                if (Int64.of_int !received) = bytes_to_read
-                then Deferred.unit
-                else failwith "Not complete transfer")) (* TODO: Remove incomplete temp file *)
-        >>= function
-        | Ok _ -> respond_ok ~code:`Created
-        | Error _ -> respond_error ~code:`Internal_server_error
+        Writer.with_file_atomic ~temp_file ~fsync:true filename ~f:(fun w ->
+            let received = ref 0 in
+            Pipe.transfer (Body.to_pipe body) (Writer.pipe w) ~f:(fun str ->
+                received := !received + (String.length str);
+                str) >>= fun () ->
+            if (Int64.of_int !received) = bytes_to_read
+            then respond_ok ~code:`Created
+            else failwith "Incomplete transfer") (* TODO: Remove incomplete temp file *)
 
 let serve_client ~root ~port ~body ~req =
   let uri = Request.uri req in
@@ -258,12 +254,12 @@ let serve_client_and_log_respond ~root ~port ~logger ~body (`Inet (client_host, 
   let path = Uri.path @@ Request.uri req in
   let version = Code.string_of_version @@ Request.version req in
   (match log_info with
-  | `Log_ok status ->
-      let status = Code.string_of_status status in
-      Log.info logger "%s \"%s %s %s\" %s" client_host meth path version status
-  | `Log_error (status, msg) ->
-      let status = Code.string_of_status status in
-      Log.error logger "%s \"%s %s %s\" %s \"%s\"" client_host meth path version status msg);
+   | `Log_ok status ->
+     let status = Code.string_of_status status in
+     Log.info logger "%s \"%s %s %s\" %s" client_host meth path version status
+   | `Log_error (status, msg) ->
+     let status = Code.string_of_status status in
+     Log.error logger "%s \"%s %s %s\" %s \"%s\"" client_host meth path version status msg);
   resp
 
 let determine_mode cert key =
@@ -289,8 +285,18 @@ let start_server ~root ~host ~port ~cert ~key ~verbose () =
       ~address:(`Inet (host, port))
       ~listening_on:(fun _ -> port)
   in
+  let handle_error address ex =
+    match address with
+    | `Unix _ -> assert false
+    | `Inet (client_host, _) ->
+      let client_host = UnixLabels.string_of_inet_addr client_host in
+      match Monitor.extract_exn ex with
+      | Failure err -> Log.error logger "%s Failure: %s" client_host err
+      | Unix.Unix_error (_, err, _) -> Log.error logger "%s Unix_error: %s" client_host err
+      | ex -> Log.error logger "%s Exception: %s" client_host (Exn.to_string ex)
+  in
   Server.create
-    ~on_handler_error:`Raise
+    ~on_handler_error:(`Call handle_error)
     ~mode
     listen_on
     (serve_client_and_log_respond ~root ~port ~logger)
