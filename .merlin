@@ -1,4 +1,4 @@
-PKG core async cohttp.async yojson
+PKG core async cohttp.async yojson cryptokit
 S .
 B _build
 

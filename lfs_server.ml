@@ -20,6 +20,8 @@ open Async.Std
 open Cohttp
 open Cohttp_async
 
+open Lfs_aux
+
 let is_sha256_hex_digest str =
   if String.length str <> 64 then false
   else String.for_all str ~f:Char.is_alphanum
@@ -222,14 +224,23 @@ let handle_put root meth uri body req =
         make_objects_dir_if_needed ~root ~oid >>= fun () ->
         Writer.with_file_atomic ~temp_file ~fsync:true filename ~f:(fun w ->
             let received = ref 0 in
+            let hash = SHA256.create () in
             Pipe.transfer (Body.to_pipe body) (Writer.pipe w) ~f:(fun str ->
                 received := !received + (String.length str);
+                SHA256.feed hash str;
                 str) >>= fun () ->
-            if (Int64.of_int !received) = bytes_to_read
-            then respond_ok ~code:`Created
-            else
+            let received = Int64.of_int !received in
+            let hexdigest = SHA256.hexdigest hash in
+            if received <> bytes_to_read
+            then
               let err = sprintf "Incomplete upload of %s" oid in
-              failwith err) (* TODO: Remove incomplete temp file *)
+              failwith err
+            else if hexdigest <> oid
+            then
+              let err = sprintf "Content doesn't match SHA-256 digest: %s" oid in
+              failwith err
+            else respond_ok ~code:`Created
+          ) (* TODO: Remove incomplete temp file *)
 
 let serve_client ~root ~fix_uri ~body ~req =
   let uri = Request.uri req in
@@ -264,9 +275,9 @@ let determine_mode cert key =
   | Some c, Some k -> return (`OpenSSL (`Crt_file_path c, `Key_file_path k))
   | None, None -> return `TCP
   | _ ->
-      eprintf "Error: must specify both certificate and key for HTTPS\n";
-      shutdown 0;
-      Deferred.never ()
+    eprintf "Error: must specify both certificate and key for HTTPS\n";
+    shutdown 0;
+    Deferred.never ()
 
 let start_server ~root ~host ~port ~cert ~key ~verbose () =
   let root = Filename.concat root "/.lfs" in
@@ -300,8 +311,8 @@ let start_server ~root ~host ~port ~cert ~key ~verbose () =
       if port = default_port then None else Some port
     in
     let scheme, port = match mode with
-    | `OpenSSL _ -> Some "https", (with_default_port 443)
-    | `TCP -> Some "http", (with_default_port 80)
+      | `OpenSSL _ -> Some "https", (with_default_port 443)
+      | `TCP -> Some "http", (with_default_port 80)
     in
     fun uri ->
       let uri = Uri.with_scheme uri scheme in

@@ -1,4 +1,4 @@
-true: package(core async cohttp.async yojson)
+true: package(core async cohttp.async yojson cryptokit)
 true: thread,annot
 true: bin_annot
 
