@@ -34,6 +34,7 @@ From binary packages:
 * Upload validation (calculate SHA-256 digest)
 * SHA-256 hex digests should be case insensitive
 * Add max file size option
+* Add connection timeouts
 * Multi server support
 * Automated tests
 * Setup Travis continuous builds
