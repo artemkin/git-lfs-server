@@ -222,25 +222,21 @@ let handle_put root meth uri body req =
         let filename = get_object_filename ~root ~oid in
         let temp_file = get_temp_filename ~root ~oid in
         make_objects_dir_if_needed ~root ~oid >>= fun () ->
-        Writer.with_file_atomic ~temp_file ~fsync:true filename ~f:(fun w ->
-            let received = ref 0 in
+        Lfs_aux.with_file_atomic ~temp_file filename ~f:(fun w ->
             let hash = SHA256.create () in
             Pipe.transfer (Body.to_pipe body) (Writer.pipe w) ~f:(fun str ->
-                received := !received + (String.length str);
                 SHA256.feed hash str;
-                str) >>= fun () ->
-            let received = Int64.of_int !received in
+                str) >>| fun () ->
+            let bytes_received = Int63.to_int64 (Writer.bytes_received w) in
             let hexdigest = SHA256.hexdigest hash in
-            if received <> bytes_to_read
-            then
-              let err = sprintf "Incomplete upload of %s" oid in
-              failwith err
+            if bytes_received <> bytes_to_read
+            then Error (sprintf "Incomplete upload of %s" oid)
             else if hexdigest <> oid
-            then
-              let err = sprintf "Content doesn't match SHA-256 digest: %s" oid in
-              failwith err
-            else respond_ok ~code:`Created
-          ) (* TODO: Remove incomplete temp file *)
+            then Error (sprintf "Content doesn't match SHA-256 digest: %s" oid)
+            else (Ok ()))
+        >>= function
+        | Ok () -> respond_ok ~code:`Created
+        | Error msg -> respond_error_with_message ~meth ~code:`Bad_request msg
 
 let serve_client ~root ~fix_uri ~body ~req =
   let uri = Request.uri req in
