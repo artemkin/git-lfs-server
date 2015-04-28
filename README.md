@@ -30,9 +30,6 @@ From binary packages:
 * [Mac OS X x64](https://github.com/artemkin/git-lfs-server/releases/download/v0.1.1/lfs_server-0.1.1-osx.x64.tar.gz)
 
 ## TODO
-* Remove incomplete/broken temporary files
-* Upload validation (calculate SHA-256 digest)
-* SHA-256 hex digests should be case insensitive
 * Add max file size option
 * Add connection timeouts
 * Multi server support
@@ -41,6 +38,9 @@ From binary packages:
 * Setup Coverals
 * Create OPAM package
 * Authentication
+* ~~Remove incomplete/broken temporary files~~
+* ~~Upload validation (calculate SHA-256 digest)~~
+* ~~Reject uppercase SHA-256 hex digests~~
 * ~~Fix HTTPS urls~~
 * ~~Rearrange files in release package and remove redundant libs~~
 * ~~Add logging~~
