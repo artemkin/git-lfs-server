@@ -22,10 +22,6 @@ open Cohttp_async
 
 open Lfs_aux
 
-let is_sha256_hex_digest str =
-  if String.length str <> 64 then false
-  else String.for_all str ~f:Char.is_alphanum
-
 module Json = struct
   let error msg =
     let msg = `Assoc [ "message", `String msg ] in
@@ -222,7 +218,7 @@ let handle_put root meth uri body req =
         let filename = get_object_filename ~root ~oid in
         let temp_file = get_temp_filename ~root ~oid in
         make_objects_dir_if_needed ~root ~oid >>= fun () ->
-        Lfs_aux.with_file_atomic ~temp_file filename ~f:(fun w ->
+        with_file_atomic ~temp_file filename ~f:(fun w ->
             let hash = SHA256.create () in
             Pipe.transfer (Body.to_pipe body) (Writer.pipe w) ~f:(fun str ->
                 SHA256.feed hash str;

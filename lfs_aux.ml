@@ -30,6 +30,10 @@ end = struct
     Cryptokit.transform_string (Cryptokit.Hexa.encode ()) sum
 end
 
+let is_sha256_hex_digest str =
+  if String.length str <> 64 then false
+  else String.for_all str ~f:(fun ch -> Char.(is_lowercase ch || is_digit ch))
+
 let getumask () =
   let umask = Core_unix.umask 0 in
   ignore (Core_unix.umask umask);
