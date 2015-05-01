@@ -8,12 +8,11 @@ before_install:
 install:
   - export OPAMYES=1
 
-  - opam init 
+  - opam init
   - eval `opam config env`
   - opam switch
   - opam update
-  - opam install async async_ssl cohttp cryptokit
-
+  - opam install async async_ssl cohttp cryptokit yojson
 
 script:
   - ./scripts/build.sh lfs_server.native
