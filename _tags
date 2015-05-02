@@ -1,4 +1,36 @@
-true: package(core async cohttp.async yojson cryptokit)
-true: thread,annot
-true: bin_annot
-
+# OASIS_START
+# DO NOT EDIT (digest: 87f90d886bfcdb08f2dd7371bb2af437)
+# Ignore VCS directories, you can use the same kind of rule outside
+# OASIS_START/STOP if you want to exclude directories that contains
+# useless stuff for the build process
+true: annot, bin_annot
+<**/.svn>: -traverse
+<**/.svn>: not_hygienic
+".bzr": -traverse
+".bzr": not_hygienic
+".hg": -traverse
+".hg": not_hygienic
+".git": -traverse
+".git": not_hygienic
+"_darcs": -traverse
+"_darcs": not_hygienic
+# Executable git-lfs-server
+<src/lfs_server.{native,byte}>: pkg_async
+<src/lfs_server.{native,byte}>: pkg_async_ssl
+<src/lfs_server.{native,byte}>: pkg_cohttp
+<src/lfs_server.{native,byte}>: pkg_cohttp.async
+<src/lfs_server.{native,byte}>: pkg_core
+<src/lfs_server.{native,byte}>: pkg_cryptokit
+<src/lfs_server.{native,byte}>: pkg_sexplib.syntax
+<src/lfs_server.{native,byte}>: pkg_threads
+<src/lfs_server.{native,byte}>: pkg_yojson
+<src/*.ml{,i,y}>: pkg_async
+<src/*.ml{,i,y}>: pkg_async_ssl
+<src/*.ml{,i,y}>: pkg_cohttp
+<src/*.ml{,i,y}>: pkg_cohttp.async
+<src/*.ml{,i,y}>: pkg_core
+<src/*.ml{,i,y}>: pkg_cryptokit
+<src/*.ml{,i,y}>: pkg_sexplib.syntax
+<src/*.ml{,i,y}>: pkg_threads
+<src/*.ml{,i,y}>: pkg_yojson
+# OASIS_STOP
