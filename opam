@@ -1,0 +1,29 @@
+opam-version: "1.2"
+name: "git-lfs-server"
+version: "0.2.1"
+maintainer: "Stanislav Artemkin <artemkin@gmail.com>"
+authors: [ "Stanislav Artemkin" ]
+license: "ISC"
+homepage: "https://github.com/artemkin/git-lfs-server"
+bug-reports: "https://github.com/artemkin/git-lfs-server/issues"
+dev-repo: "https://github.com/artemkin/git-lfs-server.git"
+build: [
+  ["./configure" "--prefix=%{prefix}%"]
+  [make]
+]
+install: [make "install"]
+remove: [
+  ["ocamlfind" "remove" "git-lfs-server"]
+]
+depends: [
+  "ocamlfind" {build}
+  "async"
+  "async_ssl"
+  "base-threads"
+  "cohttp" {>= "0.17.1"}
+  "core"
+  "cryptokit"
+  "ocamlfind"
+  "sexplib"
+  "yojson"
+]
