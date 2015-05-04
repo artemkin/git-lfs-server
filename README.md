@@ -1,6 +1,8 @@
 
 # Git LFS server
 
+[![Build Status](https://travis-ci.org/artemkin/git-lfs-server.svg?branch=master)](https://travis-ci.org/artemkin/git-lfs-server)
+
 Simple HTTP(S) server for [Git Large File Storage](https://git-lfs.github.com).
 
 ```
