@@ -14,6 +14,7 @@ build: [
 install: [make "install"]
 remove: [
   ["ocamlfind" "remove" "git-lfs-server"]
+  ["rm" "-f" "%{bin}%/git-lfs-server"]
 ]
 depends: [
   "ocamlfind" {build}
