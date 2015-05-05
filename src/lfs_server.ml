@@ -310,7 +310,7 @@ let start_server ~root ~host ~port ~cert ~key ~verbose () =
       let uri = Uri.with_scheme uri scheme in
       Uri.with_port uri port
   in
-  Signal.handle [Signal.term] ~f:(fun _ ->
+  Signal.handle [Signal.term; Signal.int] ~f:(fun _ ->
     Log.raw logger "Shutting down...";
     Shutdown.shutdown 0);
   Server.create
