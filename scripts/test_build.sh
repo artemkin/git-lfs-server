@@ -5,6 +5,8 @@ ocamlbuild \
     -syntax camlp4o \
     -pkg core,async,async_ssl,cohttp,cohttp.async,yojson,cryptokit \
     -pkg sexplib.syntax \
+    -pkg bisect \
+    -tag debug \
     -tag thread \
     -tag bin_annot \
     -tag short_paths \

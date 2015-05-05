@@ -8,10 +8,9 @@ homepage: "https://github.com/artemkin/git-lfs-server"
 bug-reports: "https://github.com/artemkin/git-lfs-server/issues"
 dev-repo: "https://github.com/artemkin/git-lfs-server.git"
 build: [
-  ["./configure" "--prefix=%{prefix}%"]
-  [make]
+  ["./scripts/build.sh" "src/lfs_server.native"]
 ]
-install: [make "install"]
+install: ["cp" "lfs_server.native" "%{bin}%/git-lfs-server"]
 remove: [
   ["ocamlfind" "remove" "git-lfs-server"]
   ["rm" "-f" "%{bin}%/git-lfs-server"]
