@@ -13,10 +13,13 @@ install:
   - opam switch
   - opam update
   - opam install async async_ssl cohttp cryptokit yojson
-  - opam install bisect
+  - opam install bisect ocveralls
 
 script:
   - opam pin add .
   - opam unpin git-lfs-server
-  - ./scripts/test_build.sh src/lfs_server.native
+  - ./scripts/run_tests.sh
+
+after_success:
+  - ocveralls --prefix _build _build/coverage*.out --send
 

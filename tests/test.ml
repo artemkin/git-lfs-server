@@ -1,3 +1,4 @@
+#!/usr/bin/env ocaml unix.cma
 
 (*TODO print diff *)
 

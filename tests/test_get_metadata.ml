@@ -1,4 +1,4 @@
-#!/usr/bin/env ocamlrun ocaml unix.cma
+#!/usr/bin/env ocaml unix.cma
 
 #use "test.ml"
 
