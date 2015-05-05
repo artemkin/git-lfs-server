@@ -1,4 +1,7 @@
-#!/usr/bin/env ocaml unix.cma
+#!/usr/bin/env ocaml
+
+#use "topfind"
+#require "unix"
 
 (*TODO print diff *)
 
