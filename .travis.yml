@@ -17,5 +17,5 @@ install:
 script:
   - opam pin add .
   - opam unpin git-lfs-server
-  - ./scripts/test_build.sh lfs_server.native
+  - ./scripts/test_build.sh src/lfs_server.native
 
