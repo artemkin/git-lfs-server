@@ -13,6 +13,7 @@ install:
   - opam switch
   - opam update
   - opam install async async_ssl cohttp cryptokit yojson
+  - opam install bisect
 
 script:
   - opam pin add .
