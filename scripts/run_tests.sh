@@ -2,10 +2,6 @@
 
 set -e
 
-echo Setup environment
-eval `opam config env`
-env
-
 echo Build from scratch
 rm -rf .lfs
 ocamlbuild -clean
@@ -17,6 +13,7 @@ cp -R tests/.lfs .
 echo Run server
 export BISECT_FILE=_build/coverage
 ./lfs_server.native -verbose &
+LFS_SERVER_PID=$!
 sleep 2
 
 echo Run tests
@@ -24,7 +21,7 @@ cd tests
 find . -iname '*.ml' -exec '{}' \;
 
 echo Stop server
-kill %1
+kill $LFS_SERVER_PID
 sleep 2
 
 echo Generate code coverage report
