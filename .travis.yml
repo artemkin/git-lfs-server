@@ -9,11 +9,11 @@ install:
   - export OPAMYES=1
 
   - opam init
-  - opam switch
+  - opam switch 4.02.1
+  - eval `opam config env`
   - opam update
   - opam install async async_ssl cohttp cryptokit yojson
   - opam install bisect ocveralls
-  - eval `opam config env`
 
 script:
   - opam pin add .
