@@ -2,6 +2,10 @@
 
 set -e
 
+echo Setup environment
+eval `opam config env`
+env
+
 echo Build from scratch
 rm -rf .lfs
 ocamlbuild -clean
