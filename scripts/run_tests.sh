@@ -3,8 +3,12 @@
 set -e
 
 echo Build from scratch
+rm -rf .lfs
 ocamlbuild -clean
 ./scripts/test_build.sh src/lfs_server.native
+
+echo Copy test .lfs folder
+cp -R tests/.lfs .
 
 echo Run server
 export BISECT_FILE=_build/coverage

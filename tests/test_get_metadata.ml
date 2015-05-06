@@ -1,8 +1,6 @@
-#! /bin/sh
-# (*
-exec ocaml "$0" "$@"
-*) use "topfind";;
+#!/usr/bin/env ocaml
 
+#use "topfind"
 #require "unix"
 #use "test.ml"
 
