@@ -1,7 +1,5 @@
 #!/usr/bin/env ocaml
 
-#use "topfind"
-#require "unix"
 #use "test.ml"
 
 let request = {|
@@ -33,5 +31,5 @@ content-type: application/vnd.git-lfs+json
 |}
 
 let () =
-  run request response
+  Test.netcat request response
 

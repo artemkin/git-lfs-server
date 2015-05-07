@@ -13,7 +13,7 @@ install:
   - eval `opam config env`
   - opam update
   - opam install async async_ssl cohttp cryptokit yojson
-  - opam install bisect ocveralls
+  - opam install bisect ocveralls ocamldiff
 
 script:
   - opam pin add .

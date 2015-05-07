@@ -1,34 +1,47 @@
 #!/usr/bin/env ocaml
 
 #use "topfind"
-#require "unix"
+#thread
+#require "diff"
 
-(*TODO print diff *)
+module Test : sig
 
-let drop_first ~ch s =
-  if s.[0] <> ch then s else String.sub s 1 (String.length s - 1)
+  val netcat: string -> string -> unit
 
-let drop_last ~ch s =
-  let len = String.length s in
-  if s.[len - 1] <> ch then s else String.sub s 0 (len - 1)
+end = struct
 
-let run request response =
-  request |> drop_first ~ch:'\n' |> fun request ->
-  response |> drop_first ~ch:'\n' |> drop_last ~ch:'\n' |> fun response ->
-  let fd_in, fd_out = Unix.open_process "nc 127.0.0.1 8080" in
-  output_bytes fd_out request;
-  flush fd_out;
-  let len = 1000 * 1024 in
-  let buf = Bytes.make len '\000' in
-  let read_bytes = input fd_in buf 0 len in
-  let error msg =
-    Printf.eprintf "%s\n%!" msg;
-    exit 1
-  in
-  match Unix.close_process (fd_in, fd_out) with
-  | Unix.WSTOPPED _ | Unix.WSIGNALED _ -> error "Process stopped/signaled"
-  | Unix.WEXITED code when code <> 0 -> error "Wrong exit code"
-  | Unix.WEXITED _ ->
-    let response' = String.sub buf 0 read_bytes in
-    if response <> response' then error "Wrong response"
+  let drop_first_lf s =
+    if s.[0] <> '\n' then s else String.sub s 1 (String.length s - 1)
+
+  let drop_last_lf s =
+    let len = String.length s in
+    let last = s.[len - 1] = '\n' in
+    let before_last = len > 1 && s.[len - 2] = '\r' in
+    if (not last) || before_last then s else String.sub s 0 (len - 1)
+
+  let get_diff a b = Odiff.string_of_diffs (Odiff.strings_diffs a b)
+
+  let netcat request response =
+    request |> drop_first_lf |> fun request ->
+    response |> drop_first_lf |> drop_last_lf |> fun response ->
+    let fd_in, fd_out = Unix.open_process "nc 127.0.0.1 8080" in
+    output_bytes fd_out request;
+    flush fd_out;
+    Thread.delay 0.1; (* TODO wait for process completion *)
+    let len = 1000 * 1024 in
+    let buf = Bytes.make len '\000' in
+    let read_bytes = input fd_in buf 0 len in
+    let error msg =
+      Printf.eprintf "%s: %s\n%!" Sys.argv.(0) msg;
+      exit 1
+    in
+    match Unix.close_process (fd_in, fd_out) with
+    | Unix.WSTOPPED _ | Unix.WSIGNALED _ -> error "Process stopped/signaled"
+    | Unix.WEXITED code when code <> 0 -> error "Wrong exit code"
+    | Unix.WEXITED _ ->
+      let response' = String.sub buf 0 read_bytes in
+      if response <> response' then
+        error ("Wrong response\n\n" ^ (get_diff response response'))
+
+end
 
