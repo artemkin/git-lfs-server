@@ -2,6 +2,7 @@
 # Git LFS server
 
 [![Build Status](https://travis-ci.org/artemkin/git-lfs-server.svg?branch=master)](https://travis-ci.org/artemkin/git-lfs-server)
+[![Coverage Status](https://coveralls.io/repos/artemkin/git-lfs-server/badge.png?branch=master)](https://coveralls.io/r/artemkin/git-lfs-server?branch=master)
 
 Simple HTTP(S) server for [Git Large File Storage](https://git-lfs.github.com).
 
@@ -32,14 +33,14 @@ From binary packages:
 * [Mac OS X x64](https://github.com/artemkin/git-lfs-server/releases/download/v0.2.0/lfs_server-0.2.0-osx.x64.tar.gz)
 
 ## TODO
+* Multi server support
+* Create OPAM package
 * Add max file size option
 * Add connection timeouts
-* Multi server support
-* Automated tests
-* Setup Travis continuous builds
-* Setup Coverals
-* Create OPAM package
 * Authentication
+* ~~Automated tests~~
+* ~~Setup Travis continuous builds~~
+* ~~Setup Coverals~~
 * ~~Remove incomplete/broken temporary files~~
 * ~~Upload validation (calculate SHA-256 digest)~~
 * ~~Reject uppercase SHA-256 hex digests~~
