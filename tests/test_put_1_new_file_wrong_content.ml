@@ -1,9 +1,14 @@
+#!/usr/bin/env ocaml
+
+#use "test.ml"
+
+let request = {|
 PUT /objects/73bcc5e2fdb23b560e112be22c901379bf9ce3a1f9ca32acd92bc6ba5667a0ae HTTP/1.1
 Host: localhost
 Content-Length: 7170
 
 (*
- * Copyright (c) 2015 Stanislav Artemkin <artemkin@gmail.com>
+ * ERRORight (c) 2015 Stanislav Artemkin <artemkin@gmail.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -205,4 +210,21 @@ let () =
     )
     (fun root host port -> start_server ~root ~host ~port)
   |> Command.run
+
+|}
+
+let response = {|
+HTTP/1.1 400 Bad Request
+connection: keep-alive
+content-length: 125
+content-type: application/vnd.git-lfs+json
+
+{
+  "message":
+    "Content doesn't match SHA-256 digest: 73bcc5e2fdb23b560e112be22c901379bf9ce3a1f9ca32acd92bc6ba5667a0ae"
+}
+|}
+
+let () =
+  Test.netcat request response
 
