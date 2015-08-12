@@ -279,7 +279,11 @@ let start_server ~root ~host ~port ~cert ~key ~verbose () =
   determine_mode cert key >>= fun mode ->
   let mode_str = (match mode with `OpenSSL _ -> "HTTPS" | `TCP -> "HTTP") in
   let logging_level = if verbose then `Info else `Error in
-  let logger = Log.create ~output:[Log.Output.stdout ()] ~level:logging_level in
+  let logger =
+    Log.create
+      ~on_error:`Raise
+      ~output:[Log.Output.stdout ()]
+      ~level:logging_level in
   Log.raw logger "Listening for %s on %s:%d" mode_str host port;
   Unix.Inet_addr.of_string_or_getbyname host
   >>= fun host ->
@@ -311,8 +315,8 @@ let start_server ~root ~host ~port ~cert ~key ~verbose () =
       Uri.with_port uri port
   in
   Signal.handle [Signal.term; Signal.int] ~f:(fun _ ->
-    Log.raw logger "Shutting down...";
-    Shutdown.shutdown 0);
+      Log.raw logger "Shutting down...";
+      Shutdown.shutdown 0);
   Server.create
     ~on_handler_error:(`Call handle_error)
     ~mode

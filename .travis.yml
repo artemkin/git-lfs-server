@@ -9,7 +9,7 @@ install:
   - export OPAMYES=1
 
   - opam init
-  - opam switch 4.02.1
+  - opam switch 4.02.3
   - eval `opam config env`
   - opam update
   - opam install async async_ssl cohttp cryptokit yojson
