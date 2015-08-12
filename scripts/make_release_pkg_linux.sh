@@ -4,6 +4,7 @@ ocamlbuild -clean
 ./scripts/build.sh src/lfs_config.native
 ./scripts/build.sh src/lfs_server.native
 
+rm -rf lfs_server
 mkdir lfs_server
 mkdir lfs_server/bin
 mkdir lfs_server/lib
