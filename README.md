@@ -37,7 +37,7 @@ From binary packages:
 * Create OPAM package
 * Add max file size option
 * Add connection timeouts
-* Authentication
+* ~~Authentication~~
 * ~~Automated tests~~
 * ~~Setup Travis continuous builds~~
 * ~~Setup Coverals~~

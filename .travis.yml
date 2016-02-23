@@ -12,7 +12,7 @@ install:
   - opam switch 4.02.3
   - eval `opam config env`
   - opam update
-  - opam install async async_ssl cohttp cryptokit yojson
+  - opam install async async_ssl cohttp cryptokit yojson simple_pam
   - opam install bisect ocveralls ocamldiff
 
 script:

@@ -1,4 +1,4 @@
-PKG core async cohttp.async yojson cryptokit
+PKG core async cohttp.async yojson cryptokit simple_pam
 S src
 B _build/src
 

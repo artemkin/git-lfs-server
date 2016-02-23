@@ -234,17 +234,12 @@ let handle_put root meth uri body req =
         | Ok () -> respond_ok ~code:`Created
         | Error msg -> respond_error_with_message ~meth ~code:`Bad_request msg
 
-let authorize req =
-  match Request.headers req |> Header.get_authorization with
-  | Some `Basic (_user, _passwd) -> true (*TODO*)
-  | None | Some `Other _ -> false
-
-let serve_client ~root ~fix_uri ~body ~req =
+let serve_client ~root ~fix_uri ~auth ~body ~req =
   let uri = Request.uri req in
   let meth = Request.meth req in
   if Option.is_none (Uri.host uri) then
     respond_error_with_message ~meth ~code:`Bad_request "Wrong host"
-  else if not (authorize req) then
+  else if not (auth req) then
     respond_error_with_message ~meth ~code:`Unauthorized "The authentication credentials are incorrect"
   else
     let uri = fix_uri uri in
@@ -254,8 +249,8 @@ let serve_client ~root ~fix_uri ~body ~req =
     | `PUT -> handle_put root meth uri body req
     | _ -> respond_error ~code:`Method_not_allowed
 
-let serve_client_and_log_respond ~root ~fix_uri ~logger ~body (`Inet (client_host, _)) req =
-  serve_client ~root ~fix_uri ~body ~req >>| fun (resp, log_info) ->
+let serve_client_and_log_respond ~root ~fix_uri ~auth ~logger ~body (`Inet (client_host, _)) req =
+  serve_client ~root ~fix_uri ~auth ~body ~req >>| fun (resp, log_info) ->
   let client_host = UnixLabels.string_of_inet_addr client_host in
   let meth = Code.string_of_method @@ Request.meth req in
   let path = Uri.path @@ Request.uri req in
@@ -290,7 +285,13 @@ let scheme_and_port mode port =
   | `OpenSSL _ -> Some "https", (with_default_port 443)
   | `TCP -> Some "http", (with_default_port 80)
 
-let start_server ~root ~host ~port ~cert ~key ~verbose () =
+let authorize_with_pam pam req =
+  match Request.headers req |> Header.get_authorization with
+  | Some `Basic (user, passwd) ->
+    (try Simple_pam.authenticate pam user passwd; true with _ -> false)
+  | None | Some `Other _ -> false
+
+let start_server root host port cert key pam verbose () =
   let root = Filename.concat root "/.lfs" in
   mkdir_if_needed root >>= fun () ->
   mkdir_if_needed @@ Filename.concat root "/objects" >>= fun () ->
@@ -326,6 +327,10 @@ let start_server ~root ~host ~port ~cert ~key ~verbose () =
       let uri = Uri.with_scheme uri scheme in
       Uri.with_port uri port
   in
+  let auth = match pam with
+    | None -> (fun _req -> true)
+    | Some pam -> authorize_with_pam pam
+  in
   Signal.handle [Signal.term; Signal.int] ~f:(fun _ ->
       Log.raw logger "Shutting down...";
       Shutdown.shutdown 0);
@@ -333,7 +338,7 @@ let start_server ~root ~host ~port ~cert ~key ~verbose () =
     ~on_handler_error:(`Call handle_error)
     ~mode:(mode :> Conduit_async.server)
     listen_on
-    (serve_client_and_log_respond ~root ~fix_uri ~logger)
+    (serve_client_and_log_respond ~root ~fix_uri ~auth ~logger)
   >>= fun _ -> Deferred.never ()
 
 let () =
@@ -346,9 +351,9 @@ let () =
       +> flag "-p" (optional_with_default 8080 int) ~doc:"port TCP port to listen on"
       +> flag "-cert" (optional file) ~doc:"file File of certificate for https"
       +> flag "-key" (optional file) ~doc:"file File of private key for https"
+      +> flag "-pam" (optional string) ~doc:"service PAM service name for user authentication"
       +> flag "-verbose" (no_arg) ~doc:" Verbose logging"
     )
-    (fun root host port cert key verbose ->
-       start_server ~root ~host ~port ~cert ~key ~verbose)
+    start_server
   |> fun command -> Command.run ~version:Lfs_config.version ~build_info:"Master" command
 

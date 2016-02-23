@@ -3,7 +3,7 @@
 ocamlbuild \
     -use-ocamlfind \
     -syntax camlp4o \
-    -pkg core,async,async_ssl,cohttp,cohttp.async,yojson,cryptokit \
+    -pkg core,async,async_ssl,cohttp,cohttp.async,yojson,cryptokit,simple_pam \
     -pkg sexplib.syntax \
     -pkg bisect \
     -tag debug \
