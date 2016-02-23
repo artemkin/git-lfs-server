@@ -271,20 +271,31 @@ let determine_mode cert key =
     shutdown 0;
     Deferred.never ()
 
+let mode_to_string = function
+  | `OpenSSL _ -> "HTTPS"
+  | `TCP -> "HTTP"
+
+let scheme_and_port mode port =
+  let with_default_port default_port =
+    if port = default_port then None else Some port
+  in
+  match mode with
+  | `OpenSSL _ -> Some "https", (with_default_port 443)
+  | `TCP -> Some "http", (with_default_port 80)
+
 let start_server ~root ~host ~port ~cert ~key ~verbose () =
   let root = Filename.concat root "/.lfs" in
   mkdir_if_needed root >>= fun () ->
   mkdir_if_needed @@ Filename.concat root "/objects" >>= fun () ->
   mkdir_if_needed @@ Filename.concat root "/temp" >>= fun () ->
   determine_mode cert key >>= fun mode ->
-  let mode_str = (match mode with `OpenSSL _ -> "HTTPS" | `TCP -> "HTTP") in
   let logging_level = if verbose then `Info else `Error in
   let logger =
     Log.create
       ~on_error:`Raise
       ~output:[Log.Output.stdout ()]
       ~level:logging_level in
-  Log.raw logger "Listening for %s on %s:%d" mode_str host port;
+  Log.raw logger "Listening for %s on %s:%d" (mode_to_string mode) host port;
   Unix.Inet_addr.of_string_or_getbyname host
   >>= fun host ->
   let listen_on = Tcp.Where_to_listen.create
@@ -303,13 +314,7 @@ let start_server ~root ~host ~port ~cert ~key ~verbose () =
       | ex -> Log.error logger "%s Exception: %s" client_host (Exn.to_string ex)
   in
   let fix_uri =
-    let with_default_port default_port =
-      if port = default_port then None else Some port
-    in
-    let scheme, port = match mode with
-      | `OpenSSL _ -> Some "https", (with_default_port 443)
-      | `TCP -> Some "http", (with_default_port 80)
-    in
+    let scheme, port = scheme_and_port mode port in
     fun uri ->
       let uri = Uri.with_scheme uri scheme in
       Uri.with_port uri port
@@ -319,7 +324,7 @@ let start_server ~root ~host ~port ~cert ~key ~verbose () =
       Shutdown.shutdown 0);
   Server.create
     ~on_handler_error:(`Call handle_error)
-    ~mode
+    ~mode:(mode :> Conduit_async.server)
     listen_on
     (serve_client_and_log_respond ~root ~fix_uri ~logger)
   >>= fun _ -> Deferred.never ()
