@@ -234,11 +234,18 @@ let handle_put root meth uri body req =
         | Ok () -> respond_ok ~code:`Created
         | Error msg -> respond_error_with_message ~meth ~code:`Bad_request msg
 
+let authorize req =
+  match Request.headers req |> Header.get_authorization with
+  | Some `Basic (_user, _passwd) -> true (*TODO*)
+  | None | Some `Other _ -> false
+
 let serve_client ~root ~fix_uri ~body ~req =
   let uri = Request.uri req in
   let meth = Request.meth req in
   if Option.is_none (Uri.host uri) then
     respond_error_with_message ~meth ~code:`Bad_request "Wrong host"
+  else if not (authorize req) then
+    respond_error_with_message ~meth ~code:`Unauthorized "The authentication credentials are incorrect"
   else
     let uri = fix_uri uri in
     match meth with
