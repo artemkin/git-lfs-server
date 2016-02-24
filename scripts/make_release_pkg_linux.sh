@@ -1,5 +1,12 @@
 #!/bin/sh
 
+set -e
+set -o pipefail
+
+# check pam-devel is installed
+# echo "#include <security/pam_appl.h>" | gcc -E - &> /dev/null; echo $?
+./scripts/check_pam.sh
+
 ocamlbuild -clean
 ./scripts/build.sh src/lfs_config.native
 ./scripts/build.sh src/lfs_server.native
