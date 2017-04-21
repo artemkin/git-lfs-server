@@ -78,6 +78,6 @@ let with_file_atomic ?temp_file file ~f =
     | Ok () -> result
     | Error exn ->
       don't_wait_for (Unix.unlink temp_file);
-      failwiths "with_file_atomic could not create file"
-        (file, exn) <:sexp_of< string * exn >>
+      failwith "with_file_atomic could not create file"
+(* FIXME        (file, exn) <:sexp_of< string * exn >> *)
 
