@@ -76,13 +76,35 @@ module Json = struct
       ] in
     to_string msg
 
-  let parse_oid_size str =
-    match from_string str with
-    | Some (`Assoc lst) ->
+  let parse_operation = function
+    | "download" -> Some `Download
+    | "upload" -> Some `Upload
+    | _ -> None
+
+  let parse_object = function
+    | `Assoc lst ->
       let oid = Option.filter (get_string lst "oid") ~f:is_sha256_hex_digest in
       let size = get_int lst "size" in
       Option.both oid size
     | _ -> None
+
+  let parse_objects = function
+    | `List lst -> Option.all (List.map lst ~f:parse_object)
+    | _ -> None
+
+  let parse_batch_req str =
+    match from_string str with
+    | Some (`Assoc lst) ->
+        let operation = (Option.find_map (get_string lst "operation") ~f:parse_operation) in
+        let objects = (Option.find_map (get_value lst "objects") ~f:parse_objects) in
+        Option.both operation objects
+    | _ -> None
+
+  let parse_oid_size str =
+    match from_string str with
+    | Some json -> parse_object json
+    | _ -> None
+
 end
 
 let add_content_type headers content_type =
@@ -196,8 +218,21 @@ let handle_verify root meth oid =
     respond_error_with_message ~meth ~code:`Not_found
       "Verification failed: object not found"
 
-let handle_batch meth =
+let handle_batch_download meth _objects =
   respond_error_with_message ~meth ~code:`Bad_request "Not implemented"
+
+let handle_batch_upload meth _objects =
+  respond_error_with_message ~meth ~code:`Bad_request "Not implemented"
+
+let handle_batch meth body =
+  Body.to_string body >>= fun body ->
+  match Json.parse_batch_req body with
+  | None ->
+    respond_error_with_message ~meth ~code:`Bad_request "Invalid body"
+  | Some (operation, objects) ->
+    match operation with
+    | `Download -> handle_batch_download meth objects
+    | `Upload -> handle_batch_upload meth objects
 
 let handle_post root meth uri body =
   let path = Uri.path uri in
@@ -205,7 +240,7 @@ let handle_post root meth uri body =
   | `Download_path _ | `Wrong_path ->
     respond_error_with_message ~meth ~code:`Not_found "Wrong path"
   | `Default_path oid -> handle_verify root meth oid
-  | `Batch_path -> handle_batch meth
+  | `Batch_path -> handle_batch meth body
   | `Post_path ->
     Body.to_string body >>= fun body ->
     match Json.parse_oid_size body with
