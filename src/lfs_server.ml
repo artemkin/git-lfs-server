@@ -15,8 +15,8 @@
  *
  *)
 
-open Core.Std
-open Async.Std
+open Core
+open Async
 open Cohttp
 open Cohttp_async
 
@@ -342,7 +342,7 @@ let start_server root host port cert key pam verbose () =
   >>= fun _ -> Deferred.never ()
 
 let () =
-  Command.async_basic
+  Command.async
     ~summary:"Start Git LFS server"
     Command.Spec.(
       empty

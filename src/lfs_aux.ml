@@ -15,9 +15,9 @@
  *
  *)
 
-open Core.Std
-open Async.Std
-module Core_unix = Core.Std.Unix
+open Core
+open Async
+module Core_unix = Core.Unix
 
 module SHA256 : sig
 
@@ -76,7 +76,7 @@ let with_file_atomic ?temp_file file ~f =
     Monitor.try_with (fun () -> Unix.rename ~src:temp_file ~dst:file)
     >>| function
     | Ok () -> result
-    | Error exn ->
+    | Error _ (* exn *) ->
       don't_wait_for (Unix.unlink temp_file);
       failwith "with_file_atomic could not create file"
 (* FIXME        (file, exn) <:sexp_of< string * exn >> *)
