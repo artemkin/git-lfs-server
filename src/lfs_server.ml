@@ -23,9 +23,29 @@ open Cohttp_async
 open Lfs_aux
 
 module Json = struct
+  let from_string str =
+    try Some (Yojson.Safe.from_string str) with _ -> None
+
+  let to_string json =
+    Yojson.pretty_to_string json
+
+  let get_value assoc_lst key =
+    List.Assoc.find assoc_lst ~equal:String.equal key
+
+  let get_string assoc_lst key =
+    match get_value assoc_lst key with
+    | Some (`String str) -> Some str
+    | _ -> None
+
+  let get_int assoc_lst key =
+    match get_value assoc_lst key with
+    | Some (`Int i) -> Some (Int64.of_int i)
+    | Some (`Intlit str) -> Option.try_with (fun () -> Int64.of_string str)
+    | _ -> None
+
   let error msg =
     let msg = `Assoc [ "message", `String msg ] in
-    Yojson.pretty_to_string msg
+    to_string msg
 
   let metadata ~oid ~size ~self_url ~download_url =
     let msg = `Assoc [
@@ -36,7 +56,7 @@ module Json = struct
           "download", `Assoc [ "href", `String (Uri.to_string download_url) ]
         ]
       ] in
-    Yojson.pretty_to_string msg
+    to_string msg
 
   let download url =
     let msg = `Assoc [
@@ -44,7 +64,7 @@ module Json = struct
           "download", `Assoc [ "href", `String (Uri.to_string url) ]
         ]
       ] in
-    Yojson.pretty_to_string msg
+    to_string msg
 
   let upload url =
     let url = Uri.to_string url in
@@ -54,21 +74,15 @@ module Json = struct
           "verify", `Assoc [ "href", `String url ]
         ]
       ] in
-    Yojson.pretty_to_string msg
+    to_string msg
 
   let parse_oid_size str =
-    try_with ~run:`Now (fun () -> return @@ Yojson.Safe.from_string str)
-    >>| function
-    | Error _ -> None
-    | Ok (`Assoc ["oid", `String oid; "size", `Int size]) ->
-      if is_sha256_hex_digest oid then
-        Some (oid, Int64.of_int size)
-      else None
-    | Ok (`Assoc ["oid", `String oid; "size", `Intlit size]) ->
-      let oid = if is_sha256_hex_digest oid then Some oid else None in
-      let size = Option.try_with (fun () -> Int64.of_string size) in
+    match from_string str with
+    | Some (`Assoc lst) ->
+      let oid = Option.filter (get_string lst "oid") ~f:is_sha256_hex_digest in
+      let size = get_int lst "size" in
       Option.both oid size
-    | Ok _ -> None
+    | _ -> None
 end
 
 let add_content_type headers content_type =
@@ -156,8 +170,9 @@ let respond_object ~root ~meth ~oid =
   | Ok res -> return res
   | Error _ -> respond_error_with_message ~meth ~code:`Not_found "Object not found"
 
-let oid_from_path path =
+let parse_path path =
   match String.rsplit2 path ~on:'/' with
+  | Some ("/objects", "batch") -> `Batch_path
   | Some ("/objects", oid) ->
     if is_sha256_hex_digest oid then `Default_path oid else `Wrong_path
   | Some ("/data/objects", oid) ->
@@ -167,10 +182,10 @@ let oid_from_path path =
 
 let handle_get root meth uri =
   let path = Uri.path uri in
-  match oid_from_path path with
+  match parse_path path with
   | `Default_path oid -> respond_object_metadata ~root ~meth ~uri ~oid
   | `Download_path oid -> respond_object ~root ~meth ~oid
-  | `Post_path | `Wrong_path ->
+  | `Post_path | `Wrong_path | `Batch_path ->
     respond_error_with_message ~meth ~code:`Not_found "Wrong path"
 
 let handle_verify root meth oid =
@@ -181,15 +196,19 @@ let handle_verify root meth oid =
     respond_error_with_message ~meth ~code:`Not_found
       "Verification failed: object not found"
 
+let handle_batch meth =
+  respond_error_with_message ~meth ~code:`Bad_request "Not implemented"
+
 let handle_post root meth uri body =
   let path = Uri.path uri in
-  match oid_from_path path with
+  match parse_path path with
   | `Download_path _ | `Wrong_path ->
     respond_error_with_message ~meth ~code:`Not_found "Wrong path"
   | `Default_path oid -> handle_verify root meth oid
+  | `Batch_path -> handle_batch meth
   | `Post_path ->
     Body.to_string body >>= fun body ->
-    Json.parse_oid_size body >>= function
+    match Json.parse_oid_size body with
     | None -> respond_error_with_message ~meth ~code:`Bad_request "Invalid body"
     | Some (oid, size) ->
       check_object_file_stat ~root ~oid >>= function
@@ -208,8 +227,8 @@ let handle_put root meth uri body req =
   match Header.get_content_range headers with
   | None -> respond_error ~code:`Bad_request
   | Some bytes_to_read ->
-    match oid_from_path path with
-    | `Download_path _ | `Post_path | `Wrong_path ->
+    match parse_path path with
+    | `Download_path _ | `Post_path | `Wrong_path | `Batch_path ->
       respond_error_with_message ~meth ~code:`Not_found "Wrong path"
     | `Default_path oid ->
       check_object_file_stat ~root ~oid >>= function
