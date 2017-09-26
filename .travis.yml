@@ -10,10 +10,10 @@ install:
   - export OPAMYES=1
 
   - opam init
-  - opam switch 4.03.0
+  - opam switch 4.04.2
   - eval `opam config env`
   - opam update
-  - opam install async async_ssl cohttp cryptokit yojson simple_pam
+  - opam install async async_ssl cohttp cohttp-async cryptokit yojson simple_pam
   - opam install bisect ocveralls ocamldiff
 
 script:

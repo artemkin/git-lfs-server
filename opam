@@ -21,6 +21,7 @@ depends: [
   "async_ssl"
   "base-threads"
   "cohttp" {>= "0.17.1"}
+  "cohttp-async"
   "core"
   "cryptokit"
   "ocamlfind"
