@@ -95,9 +95,9 @@ module Json = struct
   let parse_batch_req str =
     match from_string str with
     | Some (`Assoc lst) ->
-        let operation = (Option.find_map (get_string lst "operation") ~f:parse_operation) in
-        let objects = (Option.find_map (get_value lst "objects") ~f:parse_objects) in
-        Option.both operation objects
+      let operation = (Option.find_map (get_string lst "operation") ~f:parse_operation) in
+      let objects = (Option.find_map (get_value lst "objects") ~f:parse_objects) in
+      Option.both operation objects
     | _ -> None
 
   let parse_oid_size str =
