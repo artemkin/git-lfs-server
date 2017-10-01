@@ -76,6 +76,33 @@ module Json = struct
       ] in
     to_string msg
 
+  let batch_upload_ok oid size url =
+    let url = Uri.to_string url in
+    `Assoc [
+      "oid", `String oid;
+      "size", `Intlit (Int64.to_string size);
+      "actions", `Assoc [
+        "upload", `Assoc [ "href", `String url ];
+        "verify", `Assoc [ "href", `String url ]
+      ]
+    ]
+
+  let batch_upload_exists oid size =
+    `Assoc [
+      "oid", `String oid;
+      "size", `Intlit (Int64.to_string size);
+    ]
+
+  let batch_upload_error oid size =
+    `Assoc [
+      "oid", `String oid;
+      "size", `Intlit (Int64.to_string size);
+      "error", `Assoc [
+        "code", `Int 422;
+        "message", `String "Wrong object size"
+      ]
+    ]
+
   let parse_operation = function
     | "download" -> Some `Download
     | "upload" -> Some `Upload
@@ -218,21 +245,39 @@ let handle_verify root meth oid =
     respond_error_with_message ~meth ~code:`Not_found
       "Verification failed: object not found"
 
-let handle_batch_download meth _objects =
+let handle_batch_download _root meth _uri _objects =
   respond_error_with_message ~meth ~code:`Bad_request "Not implemented"
 
-let handle_batch_upload meth _objects =
-  respond_error_with_message ~meth ~code:`Bad_request "Not implemented"
+let handle_batch_upload root meth uri objects =
+  let aux (oid, size) =
+    check_object_file_stat ~root ~oid >>= function
+    | Ok stat when (Unix.Stats.size stat = size) ->
+      return (Json.batch_upload_exists oid size)
+    | Ok _ ->
+      return (Json.batch_upload_error oid size)
+    | Error _ ->
+      let url = Uri.with_path uri @@ Filename.concat "/objects" oid in
+      return (Json.batch_upload_ok oid size url)
+  in
+  let lst = List.map objects ~f:aux in
+  Deferred.all lst >>= fun objects ->
+  let json =
+    `Assoc [
+      "transfer", `String "basic";
+      "objects", `List objects
+    ]
+  in
+  respond_with_string ~meth ~code:`OK @@ Json.to_string json
 
-let handle_batch meth body =
+let handle_batch root meth uri body =
   Body.to_string body >>= fun body ->
   match Json.parse_batch_req body with
   | None ->
     respond_error_with_message ~meth ~code:`Bad_request "Invalid body"
   | Some (operation, objects) ->
     match operation with
-    | `Download -> handle_batch_download meth objects
-    | `Upload -> handle_batch_upload meth objects
+    | `Download -> handle_batch_download root meth uri objects
+    | `Upload -> handle_batch_upload root meth uri objects
 
 let handle_post root meth uri body =
   let path = Uri.path uri in
@@ -240,7 +285,7 @@ let handle_post root meth uri body =
   | `Download_path _ | `Wrong_path ->
     respond_error_with_message ~meth ~code:`Not_found "Wrong path"
   | `Default_path oid -> handle_verify root meth oid
-  | `Batch_path -> handle_batch meth body
+  | `Batch_path -> handle_batch root meth uri body
   | `Post_path ->
     Body.to_string body >>= fun body ->
     match Json.parse_oid_size body with
