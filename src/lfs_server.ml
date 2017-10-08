@@ -76,6 +76,26 @@ module Json = struct
       ] in
     to_string msg
 
+  let batch_error ~oid ~size ~code ~msg =
+    `Assoc [
+      "oid", `String oid;
+      "size", `Intlit (Int64.to_string size);
+      "error", `Assoc [
+        "code", `Int code;
+        "message", `String msg
+      ]
+    ]
+
+  let batch_download_ok oid size url =
+    let url = Uri.to_string url in
+    `Assoc [
+      "oid", `String oid;
+      "size", `Intlit (Int64.to_string size);
+      "actions", `Assoc [
+        "download", `Assoc [ "href", `String url ];
+      ]
+    ]
+
   let batch_upload_ok oid size url =
     let url = Uri.to_string url in
     `Assoc [
@@ -91,16 +111,6 @@ module Json = struct
     `Assoc [
       "oid", `String oid;
       "size", `Intlit (Int64.to_string size);
-    ]
-
-  let batch_upload_error oid size =
-    `Assoc [
-      "oid", `String oid;
-      "size", `Intlit (Int64.to_string size);
-      "error", `Assoc [
-        "code", `Int 422;
-        "message", `String "Wrong object size"
-      ]
     ]
 
   let parse_operation = function
@@ -245,8 +255,26 @@ let handle_verify root meth oid =
     respond_error_with_message ~meth ~code:`Not_found
       "Verification failed: object not found"
 
-let handle_batch_download _root meth _uri _objects =
-  respond_error_with_message ~meth ~code:`Bad_request "Not implemented"
+let handle_batch_download root meth uri objects =
+  let aux (oid, size) =
+    check_object_file_stat ~root ~oid >>= function
+    | Ok stat when (Unix.Stats.size stat = size) ->
+      let url = get_download_url uri oid in
+      return (Json.batch_download_ok oid size url)
+    | Ok _ ->
+      return (Json.batch_error ~oid ~size ~code:422 ~msg:"Wrong object size")
+    | Error _ ->
+      return (Json.batch_error ~oid ~size ~code:404 ~msg:"Object does not exist")
+  in
+  let lst = List.map objects ~f:aux in
+  Deferred.all lst >>= fun objects ->
+  let json =
+    `Assoc [
+      "transfer", `String "basic";
+      "objects", `List objects
+    ]
+  in
+  respond_with_string ~meth ~code:`OK @@ Json.to_string json
 
 let handle_batch_upload root meth uri objects =
   let aux (oid, size) =
@@ -254,7 +282,7 @@ let handle_batch_upload root meth uri objects =
     | Ok stat when (Unix.Stats.size stat = size) ->
       return (Json.batch_upload_exists oid size)
     | Ok _ ->
-      return (Json.batch_upload_error oid size)
+      return (Json.batch_error ~oid ~size ~code:422 ~msg:"Wrong object size")
     | Error _ ->
       let url = Uri.with_path uri @@ Filename.concat "/objects" oid in
       return (Json.batch_upload_ok oid size url)
