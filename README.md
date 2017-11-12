@@ -30,8 +30,10 @@ By default, it starts on `http://localhost:8080` and treats current directory as
 ## INSTALL
 
 From binary packages:
-* [Linux x64](https://github.com/artemkin/git-lfs-server/releases/download/v0.2.3/lfs_server-0.2.3-linux.x64.tar.gz)
-* [Mac OS X x64](https://github.com/artemkin/git-lfs-server/releases/download/v0.2.3/lfs_server-0.2.3-osx.x64.tar.gz)
+* [Linux x64](https://github.com/artemkin/git-lfs-server/releases/download/v0.3.0/lfs_server-0.3.0-linux.x64.tar.gz)
+* [Mac OS X x64](https://github.com/artemkin/git-lfs-server/releases/download/v0.3.0/lfs_server-0.3.0-osx.x64.tar.gz)
+
+
 
 ## RUN
 
