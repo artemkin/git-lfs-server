@@ -1,6 +1,6 @@
 opam-version: "1.2"
 name: "git-lfs-server"
-version: "0.2.4"
+version: "0.3.0"
 maintainer: "Stanislav Artemkin <artemkin@gmail.com>"
 authors: [ "Stanislav Artemkin" ]
 license: "ISC"
