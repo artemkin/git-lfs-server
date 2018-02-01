@@ -57,6 +57,36 @@ Warning: LFS client uses HTTP basic authentication, so using **HTTPS** is a must
 ./lfs_server.sh -verbose -pam login -s IP_ADDRESS -p PORT -cert domain.crt -key domain.key
 ```
 
+## Example
+
+```
+# Start a LFS server
+./lfs_server.sh
+
+# Clone a repo
+git clone ....
+cd repo
+
+# Add a normal file
+touch test.txt
+git add test.txt
+git commit -m "normal file"
+
+# Add a lfs file 
+git lfs install
+mkfile -n 10m test.bin
+git lfs track test.bin
+git add .gitattributes test.bin
+git commit -m "lfs file"
+
+# Configure lfs remote to local server
+git config -f .lfsconfig lfs.url http://localhost:5000
+git add .lfsconfig
+
+# Push changes
+git push
+```
+
 ## TODO
 * Multi server support
 * Create OPAM package
