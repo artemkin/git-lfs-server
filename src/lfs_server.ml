@@ -469,8 +469,10 @@ let start_server root host port cert key pam verbose () =
   >>= fun _ -> Deferred.never ()
 
 let () =
-  Command.async
+  Command.async_spec
     ~summary:"Start Git LFS server"
+    ~readme:(fun () -> "")
+    ~extract_exn:false
     Command.Spec.(
       empty
       +> anon (maybe_with_default "." ("root" %: string))
