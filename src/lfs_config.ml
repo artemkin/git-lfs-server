@@ -1,6 +1,6 @@
 
 
-let version = "0.3.0"
+let version = "0.3.1"
 
 let () =
   if Array.length Sys.argv >= 2 && Sys.argv.(1) = "version"
