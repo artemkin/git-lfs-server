@@ -1,6 +1,8 @@
 
 # Git LFS server
 
+[![Project frozen](https://img.shields.io/badge/status-frozen-blue.png)]()
+[![Project unmaintained](https://img.shields.io/badge/project-unmaintained-red.svg)]()
 [![Build Status](https://travis-ci.org/artemkin/git-lfs-server.svg?branch=master)](https://travis-ci.org/artemkin/git-lfs-server)
 [![Coverage Status](https://coveralls.io/repos/artemkin/git-lfs-server/badge.png?branch=master)](https://coveralls.io/r/artemkin/git-lfs-server?branch=master)
 
